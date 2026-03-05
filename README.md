@@ -6,7 +6,7 @@ Minimal smartphone controller over WebSockets.
 
 ```bash
 npm install
-node cli.js
+node cli.js server
 ```
 
 ## Public run (server/subdomain)
@@ -15,6 +15,7 @@ node cli.js
 2. Set:
    - `PHONEPAD_PUBLIC_URL` to your public HTTPS URL (for example `https://phonepad.nickesselman.nl`)
    - `PHONEPAD_ACCESS_TOKEN` to a long random secret
+   - optional: `PHONEPAD_INPUTS` comma list (for example `up,down,left,right,A,B,X,Y`)
 3. Start:
 
 ```bash
@@ -33,6 +34,22 @@ The URL includes `?token=...`. Keep that link private.
 
 Point your subdomain (or tunnel) to this container's `3017` port and keep WebSocket upgrade support enabled.
 
+## Choose which inputs the phone shows
+
+Server controls the visible controls.
+
+With env:
+
+```bash
+PHONEPAD_INPUTS=up,down,left,right,A,B,X,Y node cli.js server
+```
+
+Or CLI flag:
+
+```bash
+phonepad server --inputs up,down,left,right,A,B,X,Y
+```
+
 ## Debug state
 
 `/state` requires the same token in public mode:
@@ -40,6 +57,12 @@ Point your subdomain (or tunnel) to this container's `3017` port and keep WebSoc
 ```bash
 curl "https://phonepad.nickesselman.nl/state?token=YOUR_TOKEN"
 ```
+
+## Stable phone identity
+
+The controller stores a persistent `deviceId` in browser local storage and reuses the same player id after refresh/reconnect.
+This is more reliable than IP or MAC (not available/stable in browsers across networks).
+Server keeps this mapping for 24 hours of inactivity by default.
 
 ## Real-time input listener (recommended for games)
 
@@ -74,8 +97,13 @@ If `/dev/uinput` is permission denied, run the client with sudo or grant your us
 It reads `.env` by default:
 
 ```bash
-npm run client
+phonepad client
 ```
+
+`npm run client` also works and runs the same command.
+The command prints a QR code and keeps running until `Ctrl+C`.
+
+Plain `phonepad` also starts this client mode.
 
 Or pass URL/token explicitly:
 

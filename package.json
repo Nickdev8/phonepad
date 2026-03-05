@@ -7,9 +7,9 @@
     "phonepad": "./cli.js"
   },
   "scripts": {
-    "start": "node cli.js",
+    "start": "node cli.js server",
     "observe": "node observe-inputs.js",
-    "client": "node client.js"
+    "client": "node cli.js client"
   },
   "dependencies": {
     "express": "^4.21.2",

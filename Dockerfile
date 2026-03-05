@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 3017
 
-CMD ["node", "cli.js"]
+CMD ["node", "cli.js", "server"]

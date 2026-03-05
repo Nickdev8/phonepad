@@ -1,124 +1,201 @@
+:root {
+  --bg: #f1f5f9;
+  --panel: #e2e8f0;
+  --panel-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --accent: #0f766e;
+  --danger: #b91c1c;
+  --warn: #b45309;
+  --info: #1d4ed8;
+  --border: #94a3b8;
+}
+
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
-  min-height: 100vh;
-  font-family: system-ui, sans-serif;
-  background: #f3f4f6;
-  color: #111827;
+  height: 100%;
+  overflow: hidden;
 }
 
-.layout {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 1rem;
+body {
+  font-family: "Segoe UI", "Noto Sans", "Liberation Sans", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.app {
+  height: 100dvh;
+  width: 100vw;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.75rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+}
+
+.top {
+  display: grid;
+  gap: 0.35rem;
 }
 
 h1 {
-  margin: 0 0 0.5rem;
+  margin: 0;
+  font-size: clamp(1.15rem, 2.4vh, 1.5rem);
+  letter-spacing: 0.02em;
 }
 
 .status {
-  margin: 0 0 1rem;
-  font-weight: 600;
+  margin: 0;
+  font-weight: 700;
+  font-size: clamp(0.9rem, 1.8vh, 1rem);
 }
 
 .status.connected {
-  color: #047857;
+  color: var(--accent);
 }
 
+.status.connecting {
+  color: var(--info);
+}
+
+.status.retrying {
+  color: var(--warn);
+}
+
+.status.error,
 .status.disconnected {
-  color: #b91c1c;
+  color: var(--danger);
+}
+
+.retry-btn {
+  width: fit-content;
+  border: 2px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 0.55rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .controller {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  min-height: 0;
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
 }
 
 .dpad {
-  width: 220px;
-  height: 220px;
+  height: min(56vh, 62vw);
+  max-height: 340px;
+  max-width: 340px;
+  width: 100%;
+  justify-self: center;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+
+.actions {
+  min-height: min(38vh, 320px);
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-content: center;
+}
+
+.extras {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   gap: 0.5rem;
 }
 
-#btn-up {
+.control-btn {
+  border: 2px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--panel);
+  color: var(--text);
+  min-height: 3.35rem;
+  font-size: clamp(0.95rem, 2.1vh, 1.15rem);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  text-transform: none;
+}
+
+.control-btn.active {
+  background: var(--panel-strong);
+  border-color: #64748b;
+}
+
+.dpad-btn[data-slot='up'] {
   grid-column: 2;
   grid-row: 1;
 }
 
-#btn-left {
+.dpad-btn[data-slot='left'] {
   grid-column: 1;
   grid-row: 2;
 }
 
-#btn-right {
+.dpad-btn[data-slot='right'] {
   grid-column: 3;
   grid-row: 2;
 }
 
-#btn-down {
+.dpad-btn[data-slot='down'] {
   grid-column: 2;
   grid-row: 3;
 }
 
-.pad-btn,
 .action-btn {
-  border: 1px solid #9ca3af;
-  border-radius: 0.75rem;
-  background: #ffffff;
-  color: inherit;
-  font-size: 1rem;
-  font-weight: 700;
-  min-height: 3.5rem;
-  user-select: none;
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.pad-btn.active,
-.action-btn.active {
-  background: #111827;
-  color: #ffffff;
-}
-
-.actions {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.action-btn {
-  width: 96px;
-  height: 96px;
   border-radius: 999px;
-  font-size: 1.25rem;
+  aspect-ratio: 1;
+  width: 100%;
 }
 
-@media (max-width: 560px) {
+@media (orientation: landscape) {
+  .app {
+    gap: 0.65rem;
+  }
+
   .controller {
-    flex-direction: column;
+    gap: 1rem;
   }
 
   .dpad {
-    width: min(70vw, 220px);
-    height: min(70vw, 220px);
+    height: min(74vh, 320px);
   }
 
   .actions {
-    width: 100%;
-    grid-template-columns: repeat(2, 1fr);
+    min-height: min(68vh, 320px);
+    max-width: 360px;
+    justify-self: center;
+  }
+}
+
+@media (orientation: portrait) {
+  .controller {
+    grid-template-columns: 1fr 1fr;
   }
 
-  .action-btn {
-    width: 100%;
-    aspect-ratio: 1;
-    height: auto;
+  .dpad {
+    height: min(48vh, 72vw);
   }
 }

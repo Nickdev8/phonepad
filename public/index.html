@@ -7,23 +7,19 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main class="layout">
-      <h1>PhonePad</h1>
-      <p id="status" class="status disconnected">disconnected</p>
+    <main class="app">
+      <header class="top">
+        <h1>PhonePad</h1>
+        <p id="status" class="status connecting">connecting...</p>
+        <button id="reconnect-now" class="retry-btn" type="button" hidden>Reconnect now</button>
+      </header>
 
-      <section class="controller">
-        <div class="dpad">
-          <button id="btn-up" class="pad-btn">Up</button>
-          <button id="btn-left" class="pad-btn">Left</button>
-          <button id="btn-right" class="pad-btn">Right</button>
-          <button id="btn-down" class="pad-btn">Down</button>
-        </div>
-
-        <div class="actions">
-          <button id="btn-A" class="action-btn">A</button>
-          <button id="btn-B" class="action-btn">B</button>
-        </div>
+      <section class="controller" id="controller">
+        <div class="dpad" id="dpad"></div>
+        <div class="actions" id="actions"></div>
       </section>
+
+      <section class="extras" id="extras" hidden></section>
     </main>
 
     <script type="module" src="/controller.js"></script>
