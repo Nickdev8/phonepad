@@ -55,6 +55,14 @@ function buildObserveUrl(baseUrl, token) {
   return url.toString();
 }
 
+function buildLayoutUrl(baseUrl) {
+  const url = new URL(baseUrl);
+  url.protocol = url.protocol === 'https:' ? 'https:' : 'http:';
+  url.pathname = '/layout';
+  url.search = '';
+  return url.toString();
+}
+
 function writeToBridge(bridgeProcess, message) {
   if (bridgeProcess.killed || !bridgeProcess.stdin.writable) {
     return;
@@ -66,9 +74,23 @@ function writeToBridge(bridgeProcess, message) {
 const fileEnv = loadDotEnv(dotenvPath);
 const baseUrl = process.argv[2] || process.env.PAD_URL || fileEnv.PHONEPAD_PUBLIC_URL || '';
 const token = process.argv[3] || process.env.PAD_TOKEN || fileEnv.PHONEPAD_ACCESS_TOKEN || '';
+const layoutPayloadRaw = process.env.PAD_LAYOUT_JSON || '';
+let layoutPayload = null;
+if (layoutPayloadRaw) {
+  try {
+    const parsed = JSON.parse(layoutPayloadRaw);
+    if (parsed && typeof parsed === 'object') {
+      layoutPayload = parsed;
+    }
+  } catch {
+    layoutPayload = null;
+  }
+}
 let socket;
 let reconnectTimer = null;
 let shuttingDown = false;
+let publishedLayout = false;
+let layoutUrl = '';
 
 if (!baseUrl || !token) {
   console.error('Usage: node client.js <base_url> <token>');
@@ -79,6 +101,7 @@ if (!baseUrl || !token) {
 let observeUrl;
 try {
   observeUrl = buildObserveUrl(baseUrl, token);
+  layoutUrl = buildLayoutUrl(baseUrl);
 } catch {
   console.error(`Invalid base URL: ${baseUrl}`);
   process.exit(1);
@@ -120,12 +143,45 @@ function scheduleReconnect() {
   }, 1000);
 }
 
+async function publishLayout() {
+  if (!layoutPayload || !layoutUrl || shuttingDown) {
+    return;
+  }
+
+  try {
+    const response = await fetch(layoutUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(layoutPayload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    if (!publishedLayout) {
+      console.log('layout synced');
+    }
+    publishedLayout = true;
+  } catch (error) {
+    if (publishedLayout) {
+      publishedLayout = false;
+    }
+
+    console.error(`layout sync failed: ${error.message}`);
+  }
+}
+
 function connectObserver() {
   clearReconnectTimer();
   socket = new WebSocket(observeUrl);
 
   socket.on('open', () => {
     console.log(`client connected to ${observeUrl}`);
+    publishLayout();
   });
 
   socket.on('message', (payload) => {
@@ -185,3 +241,4 @@ process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
 
 connectObserver();
+publishLayout();

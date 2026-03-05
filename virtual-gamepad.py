@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import signal
 import sys
 from typing import Dict
@@ -7,6 +8,7 @@ from typing import Dict
 from evdev import AbsInfo, UInput, ecodes
 
 AXIS_MAX = 32767
+AXIS_DEADZONE = 0.02
 EMPTY_STATE = {
     "up": False,
     "down": False,
@@ -14,17 +16,54 @@ EMPTY_STATE = {
     "right": False,
     "A": False,
     "B": False,
+    "axisX": 0.0,
+    "axisY": 0.0,
 }
 
 
+def clamp_axis(raw_value):
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(value):
+        return None
+
+    if value > 1:
+        value = 1.0
+    elif value < -1:
+        value = -1.0
+
+    if abs(value) < AXIS_DEADZONE:
+        return 0.0
+
+    return value
+
+
 def normalize_state(raw):
+    up = bool(raw.get("up", False))
+    down = bool(raw.get("down", False))
+    left = bool(raw.get("left", False))
+    right = bool(raw.get("right", False))
+    axis_x = clamp_axis(raw.get("axisX", raw.get("lx")))
+    axis_y = clamp_axis(raw.get("axisY", raw.get("ly")))
+
+    if axis_x is None:
+        axis_x = signed_axis(left, right, 1.0)
+
+    if axis_y is None:
+        axis_y = signed_axis(up, down, 1.0)
+
     return {
-        "up": bool(raw.get("up", False)),
-        "down": bool(raw.get("down", False)),
-        "left": bool(raw.get("left", False)),
-        "right": bool(raw.get("right", False)),
+        "up": up,
+        "down": down,
+        "left": left,
+        "right": right,
         "A": bool(raw.get("A", False)),
         "B": bool(raw.get("B", False)),
+        "axisX": axis_x,
+        "axisY": axis_y,
     }
 
 
@@ -102,8 +141,8 @@ class VirtualPad:
                 self._write_button(code, next_state[key])
                 changed = True
 
-        new_axis_x = signed_axis(next_state["left"], next_state["right"], AXIS_MAX)
-        new_axis_y = signed_axis(next_state["up"], next_state["down"], AXIS_MAX)
+        new_axis_x = int(round(next_state["axisX"] * AXIS_MAX))
+        new_axis_y = int(round(next_state["axisY"] * AXIS_MAX))
         new_hat_x = signed_axis(next_state["left"], next_state["right"], 1)
         new_hat_y = signed_axis(next_state["up"], next_state["down"], 1)
 

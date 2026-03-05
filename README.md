@@ -41,7 +41,8 @@ When a token is present in the URL once, the controller caches it locally so sta
 
 ## Layout setup command
 
-The laptop command controls the visible controls. Layout is encoded in the QR URL, so you do not need to reconfigure Docker/server for presets.
+The laptop command controls the visible controls, and pushes layout to the server at runtime.
+When you run `phonepad` with a new layout, just refresh the phone page to apply it (no rescan needed).
 
 List all layouts:
 

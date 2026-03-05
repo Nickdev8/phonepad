@@ -171,16 +171,24 @@ export function startPhonePadServer({
   const deviceToPlayerId = new Map();
   const observers = new Set();
   const requiredAccessToken = String(accessToken ?? '').trim();
-  const configuredInputKeys = sanitizeInputKeys(inputKeys);
-  const resolvedControllerConfig = sanitizeControllerConfig(controllerConfig, configuredInputKeys);
+  let activeInputKeys = sanitizeInputKeys(inputKeys);
+  let activeControllerConfig = sanitizeControllerConfig(controllerConfig, activeInputKeys);
   let nextPlayerId = 1;
   let heartbeatTimer = null;
 
   const createEmptyState = () =>
-    Object.fromEntries(configuredInputKeys.map((key) => [key, false]));
+    Object.fromEntries(activeInputKeys.map((key) => [key, false]));
+
+  const normalizeValue = (rawValue) => {
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+      return Math.max(-1, Math.min(1, rawValue));
+    }
+
+    return Boolean(rawValue);
+  };
 
   const normalizeState = (input = {}) => {
-    const normalized = Object.fromEntries(configuredInputKeys.map((key) => [key, Boolean(input[key])]));
+    const normalized = Object.fromEntries(activeInputKeys.map((key) => [key, normalizeValue(input[key])]));
 
     for (const [rawKey, rawValue] of Object.entries(input)) {
       const key = String(rawKey ?? '').trim();
@@ -188,12 +196,47 @@ export function startPhonePadServer({
         continue;
       }
 
-      normalized[key] = Boolean(rawValue);
+      normalized[key] = normalizeValue(rawValue);
     }
 
     return normalized;
   };
 
+  const applyRuntimeLayout = (rawLayout = {}) => {
+    const payload = rawLayout && typeof rawLayout === 'object' ? rawLayout : {};
+    const hasInputOverride = Object.hasOwn(payload, 'inputs');
+    const nextInputKeys = hasInputOverride ? sanitizeInputKeys(payload.inputs) : activeInputKeys;
+    const nextControllerConfig = sanitizeControllerConfig(
+      {
+        preset: Object.hasOwn(payload, 'preset') ? payload.preset : activeControllerConfig.preset,
+        joystickMode: Object.hasOwn(payload, 'joystickMode') ? payload.joystickMode : activeControllerConfig.joystickMode,
+        buttons: Object.hasOwn(payload, 'buttons') ? payload.buttons : activeControllerConfig.buttons,
+        haptics: Object.hasOwn(payload, 'haptics') ? payload.haptics : activeControllerConfig.haptics
+      },
+      nextInputKeys
+    );
+
+    activeInputKeys = nextInputKeys;
+    activeControllerConfig = nextControllerConfig;
+
+    for (const player of players.values()) {
+      if (!player.state || typeof player.state !== 'object') {
+        player.state = createEmptyState();
+        continue;
+      }
+
+      for (const key of activeInputKeys) {
+        if (!Object.hasOwn(player.state, key)) {
+          player.state[key] = false;
+          continue;
+        }
+
+        player.state[key] = normalizeValue(player.state[key]);
+      }
+    }
+  };
+
+  app.use(express.json({ limit: '16kb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
   app.get('/health', (_req, res) => {
@@ -207,11 +250,28 @@ export function startPhonePadServer({
     }
 
     res.json({
-      inputs: configuredInputKeys,
-      preset: resolvedControllerConfig.preset,
-      joystickMode: resolvedControllerConfig.joystickMode,
-      buttons: resolvedControllerConfig.buttons,
-      haptics: resolvedControllerConfig.haptics
+      inputs: activeInputKeys,
+      preset: activeControllerConfig.preset,
+      joystickMode: activeControllerConfig.joystickMode,
+      buttons: activeControllerConfig.buttons,
+      haptics: activeControllerConfig.haptics
+    });
+  });
+
+  app.post('/layout', (req, res) => {
+    if (!isAuthorizedRequest(req, requiredAccessToken)) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+
+    applyRuntimeLayout(req.body ?? {});
+    res.json({
+      ok: true,
+      inputs: activeInputKeys,
+      preset: activeControllerConfig.preset,
+      joystickMode: activeControllerConfig.joystickMode,
+      buttons: activeControllerConfig.buttons,
+      haptics: activeControllerConfig.haptics
     });
   });
 

@@ -18,6 +18,10 @@ const RETRY_CHECK_AUTH_AFTER = 3;
 const MAX_BUFFERED_BYTES = 128 * 1024;
 const HAPTIC_MIN_INTERVAL_MS = 25;
 const DIRECTION_THRESHOLD = 0.35;
+const STICK_DEADZONE = 0.08;
+const STICK_RESPONSE_EXPONENT = 1.4;
+const STICK_SMOOTHING = 0.35;
+const STICK_AXIS_PRECISION = 1000;
 const DEFAULT_INPUTS = Object.freeze(['up', 'down', 'left', 'right', 'A', 'B']);
 const DIRECTION_KEYS = Object.freeze(['up', 'down', 'left', 'right']);
 const DEFAULT_CONTROLLER_CONFIG = Object.freeze({
@@ -36,7 +40,6 @@ const DPAD_LABELS = Object.freeze({
 const urlParams = new URLSearchParams(window.location.search);
 const token = resolveAccessToken(urlParams);
 const deviceId = getOrCreateDeviceId();
-const layoutOverrides = parseLayoutOverrides(urlParams);
 
 let inputKeys = [...DEFAULT_INPUTS];
 let state = createState(inputKeys);
@@ -95,41 +98,6 @@ function resolveAccessToken(searchParams) {
   } catch {
     return fromQuery;
   }
-}
-
-function sanitizeCsvKeys(rawValue) {
-  return String(rawValue ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item && item.length <= 24 && /^[A-Za-z0-9_-]+$/.test(item))
-    .filter((item, index, array) => array.indexOf(item) === index);
-}
-
-function parseOptionalHaptics(rawValue) {
-  if (typeof rawValue !== 'string' || !rawValue.trim()) {
-    return null;
-  }
-
-  const value = rawValue.trim().toLowerCase();
-  if (value === 'off' || value === 'false' || value === '0' || value === 'no') {
-    return false;
-  }
-
-  if (value === 'on' || value === 'true' || value === '1' || value === 'yes') {
-    return true;
-  }
-
-  return null;
-}
-
-function parseLayoutOverrides(searchParams) {
-  return {
-    preset: (searchParams.get('preset') ?? searchParams.get('layout') ?? '').trim().toLowerCase(),
-    joystickMode: searchParams.has('joystick') ? sanitizeJoystickMode(searchParams.get('joystick')) : '',
-    buttons: sanitizeCsvKeys(searchParams.get('buttons')),
-    inputs: sanitizeCsvKeys(searchParams.get('inputs')),
-    haptics: parseOptionalHaptics(searchParams.get('haptics'))
-  };
 }
 
 function sanitizeInputKeys(rawKeys) {
@@ -379,29 +347,13 @@ async function loadControllerConfig() {
     }
 
     const payload = await response.json();
-    const nextInputs =
-      layoutOverrides.inputs.length > 0 ? sanitizeInputKeys(layoutOverrides.inputs) : sanitizeInputKeys(payload.inputs);
-    const mergedConfig = {
-      ...sanitizeControllerConfig(payload, nextInputs)
-    };
-    if (layoutOverrides.preset) {
-      mergedConfig.preset = layoutOverrides.preset;
-    }
-    if (layoutOverrides.joystickMode) {
-      mergedConfig.joystickMode = layoutOverrides.joystickMode;
-    }
-    if (layoutOverrides.buttons.length > 0) {
-      mergedConfig.buttons = layoutOverrides.buttons;
-    }
-    if (layoutOverrides.haptics !== null) {
-      mergedConfig.haptics = layoutOverrides.haptics;
-    }
+    const nextInputs = sanitizeInputKeys(payload.inputs);
 
     return {
       ok: true,
       invalidUrl: false,
       inputs: nextInputs,
-      config: sanitizeControllerConfig(mergedConfig, nextInputs)
+      config: sanitizeControllerConfig(payload, nextInputs)
     };
   } catch {
     return { ok: false, invalidUrl: false, inputs: [], config: null };
@@ -477,9 +429,47 @@ function setButtonState(button, key, pressed) {
   return true;
 }
 
-function setDirectionalStates(nextDirections, smoothElement = null, vibrateOnPress = true) {
+function roundAxisValue(value) {
+  return Math.round(value * STICK_AXIS_PRECISION) / STICK_AXIS_PRECISION;
+}
+
+function applyStickResponse(x, y) {
+  const magnitude = Math.min(1, Math.hypot(x, y));
+  if (magnitude <= STICK_DEADZONE) {
+    return { x: 0, y: 0 };
+  }
+
+  const normalizedMagnitude = (magnitude - STICK_DEADZONE) / (1 - STICK_DEADZONE);
+  const curvedMagnitude = normalizedMagnitude ** STICK_RESPONSE_EXPONENT;
+  const scale = curvedMagnitude / magnitude;
+  return {
+    x: x * scale,
+    y: y * scale
+  };
+}
+
+function setAnalogStickState(axisX, axisY, smoothElement = null, vibrateOnPress = true) {
+  const nextAxisX = roundAxisValue(axisX);
+  const nextAxisY = roundAxisValue(axisY);
   let changed = false;
   let pressedDirection = false;
+
+  if (state.axisX !== nextAxisX) {
+    state.axisX = nextAxisX;
+    changed = true;
+  }
+
+  if (state.axisY !== nextAxisY) {
+    state.axisY = nextAxisY;
+    changed = true;
+  }
+
+  const nextDirections = {
+    left: nextAxisX < -DIRECTION_THRESHOLD,
+    right: nextAxisX > DIRECTION_THRESHOLD,
+    up: nextAxisY < -DIRECTION_THRESHOLD,
+    down: nextAxisY > DIRECTION_THRESHOLD
+  };
 
   for (const direction of DIRECTION_KEYS) {
     const mappedKey = directionKeys[direction];
@@ -590,6 +580,11 @@ function createSmoothStick() {
   container.appendChild(knob);
 
   let activePointerId = null;
+  let targetX = 0;
+  let targetY = 0;
+  let currentX = 0;
+  let currentY = 0;
+  let animationFrameId = 0;
   const abortController = new AbortController();
   const listenerOptions = { signal: abortController.signal };
 
@@ -599,17 +594,43 @@ function createSmoothStick() {
 
   const resetStick = () => {
     container.dataset.active = '0';
-    updateKnob(0, 0);
-    setDirectionalStates(
-      {
-        up: false,
-        down: false,
-        left: false,
-        right: false
-      },
-      container,
-      false
-    );
+    targetX = 0;
+    targetY = 0;
+    ensureAnimation();
+  };
+
+  const ensureAnimation = () => {
+    if (animationFrameId) {
+      return;
+    }
+
+    const step = () => {
+      const deltaX = targetX - currentX;
+      const deltaY = targetY - currentY;
+      currentX += deltaX * STICK_SMOOTHING;
+      currentY += deltaY * STICK_SMOOTHING;
+
+      if (Math.abs(targetX - currentX) < 0.002) {
+        currentX = targetX;
+      }
+
+      if (Math.abs(targetY - currentY) < 0.002) {
+        currentY = targetY;
+      }
+
+      const visualRadius = Math.max(1, Math.min(container.clientWidth, container.clientHeight) / 2 - 16);
+      updateKnob(currentX * visualRadius, currentY * visualRadius);
+      setAnalogStickState(currentX, currentY, container, true);
+
+      if (currentX !== targetX || currentY !== targetY || activePointerId !== null) {
+        animationFrameId = requestAnimationFrame(step);
+        return;
+      }
+
+      animationFrameId = 0;
+    };
+
+    animationFrameId = requestAnimationFrame(step);
   };
 
   const applyPointer = (event) => {
@@ -628,20 +649,12 @@ function createSmoothStick() {
     }
 
     container.dataset.active = '1';
-    updateKnob(dx, dy);
-
     const normalizedX = dx / radius;
     const normalizedY = dy / radius;
-    setDirectionalStates(
-      {
-        left: normalizedX < -DIRECTION_THRESHOLD,
-        right: normalizedX > DIRECTION_THRESHOLD,
-        up: normalizedY < -DIRECTION_THRESHOLD,
-        down: normalizedY > DIRECTION_THRESHOLD
-      },
-      container,
-      true
-    );
+    const curved = applyStickResponse(normalizedX, normalizedY);
+    targetX = curved.x;
+    targetY = curved.y;
+    ensureAnimation();
   };
 
   container.addEventListener(
@@ -703,8 +716,20 @@ function createSmoothStick() {
   return {
     element: container,
     cleanup: () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = 0;
+      }
       abortController.abort();
       activePointerId = null;
+      currentX = 0;
+      currentY = 0;
+      if (Object.hasOwn(state, 'axisX')) {
+        state.axisX = 0;
+      }
+      if (Object.hasOwn(state, 'axisY')) {
+        state.axisY = 0;
+      }
     }
   };
 }

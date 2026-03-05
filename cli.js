@@ -443,23 +443,12 @@ function parseArgs(rawArgs, defaults) {
   };
 }
 
-function buildControllerUrl(baseUrl, accessToken, layoutConfig) {
+function buildControllerUrl(baseUrl, accessToken) {
   const controllerUrl = new URL(baseUrl);
+  controllerUrl.search = '';
   if (accessToken) {
     controllerUrl.searchParams.set('token', accessToken);
   }
-
-  controllerUrl.searchParams.set('preset', layoutConfig.controllerConfig.preset);
-  controllerUrl.searchParams.set('joystick', layoutConfig.controllerConfig.joystickMode);
-
-  if (layoutConfig.controllerConfig.buttons.length > 0) {
-    controllerUrl.searchParams.set('buttons', layoutConfig.controllerConfig.buttons.join(','));
-  } else {
-    controllerUrl.searchParams.delete('buttons');
-  }
-
-  controllerUrl.searchParams.set('inputs', layoutConfig.inputKeys.join(','));
-  controllerUrl.searchParams.set('haptics', layoutConfig.controllerConfig.haptics ? 'on' : 'off');
 
   return controllerUrl.toString();
 }
@@ -530,7 +519,7 @@ async function runPhonePadCommand(rawArgs) {
 
   let controllerUrl;
   try {
-    controllerUrl = buildControllerUrl(parsed.baseUrl, parsed.accessToken, layoutConfig);
+    controllerUrl = buildControllerUrl(parsed.baseUrl, parsed.accessToken);
   } catch {
     console.error(`Invalid base URL: ${parsed.baseUrl}`);
     process.exit(1);
@@ -547,11 +536,22 @@ async function runPhonePadCommand(rawArgs) {
     inputKeys: layoutConfig.inputKeys
   });
   console.log(`Open on phone: ${controllerUrl}`);
+  console.log('Tip: refresh the controller page to apply layout changes from a new `phonepad` command.');
   console.log('Press Ctrl+C to stop');
   qrcode.generate(controllerUrl, { small: true });
 
   const childProcess = spawn(process.execPath, [path.join(__dirname, 'client.js'), parsed.baseUrl, parsed.accessToken], {
-    stdio: 'inherit'
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PAD_LAYOUT_JSON: JSON.stringify({
+        inputs: layoutConfig.inputKeys,
+        preset: layoutConfig.controllerConfig.preset,
+        joystickMode: layoutConfig.controllerConfig.joystickMode,
+        buttons: layoutConfig.controllerConfig.buttons,
+        haptics: layoutConfig.controllerConfig.haptics
+      })
+    }
   });
 
   const forwardSignal = (signal) => {
