@@ -344,13 +344,11 @@ export function startPhonePadServer({
           continue;
         }
 
-        if (client.isAlive === false) {
-          client.terminate();
-          continue;
+        try {
+          client.ping();
+        } catch {
+          // Let socket lifecycle events handle cleanup naturally.
         }
-
-        client.isAlive = false;
-        client.ping();
       }
     };
 

@@ -10,7 +10,6 @@ const DEVICE_STORAGE_KEY = 'phonepad_device_id';
 const TOKEN_STORAGE_KEY = 'phonepad_access_token';
 const AUTH_CHECK_TIMEOUT_MS = 3000;
 const KEEPALIVE_INTERVAL_MS = 1000 / 12;
-const CONNECT_TIMEOUT_MS = 4000;
 const RETRY_BASE_MS = 250;
 const RETRY_MAX_MS = 3000;
 const RETRY_JITTER_MS = 150;
@@ -804,14 +803,6 @@ async function connectWebSocket() {
   socket = activeSocket;
 
   let opened = false;
-  const connectTimeout = setTimeout(() => {
-    if (socket !== activeSocket || opened) {
-      return;
-    }
-
-    activeSocket.close();
-  }, CONNECT_TIMEOUT_MS);
-  connectTimeout.unref?.();
 
   activeSocket.addEventListener('open', () => {
     if (socket !== activeSocket) {
@@ -820,7 +811,6 @@ async function connectWebSocket() {
 
     opened = true;
     connectAttemptInFlight = false;
-    clearTimeout(connectTimeout);
     clearRetryTimers();
     retryAttempts = 0;
     setReconnectVisible(false);
@@ -833,7 +823,6 @@ async function connectWebSocket() {
       return;
     }
 
-    clearTimeout(connectTimeout);
     socket = null;
     connectAttemptInFlight = false;
 
