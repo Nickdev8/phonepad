@@ -58,6 +58,20 @@ phonepad shooter
 phonepad --preset minimal
 ```
 
+Game profiles:
+
+```bash
+phonepad ultimate-chicken-horse
+phonepad pico-park
+phonepad boomerang-fu
+phonepad ibb-obb
+phonepad plateup
+phonepad unrailed
+phonepad stickfight
+```
+
+You can also use aliases like `phonepad "ultimate chicken horse"`, `phonepad "bummerang fu"`, `phonepad "ibb&obb"`, and `phonepad "plate up"`.
+
 Custom layouts:
 
 ```bash

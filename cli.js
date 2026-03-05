@@ -10,30 +10,91 @@ const DIRECTION_SET = new Set(DIRECTION_KEYS);
 const JOYSTICK_MODES = new Set(['dpad', 'smooth', 'none']);
 const LAYOUT_PRESETS = Object.freeze({
   classic: {
+    category: 'base',
     description: 'D-pad + A/B',
     joystickMode: 'dpad',
     buttons: ['A', 'B']
   },
   arcade: {
+    category: 'base',
     description: 'D-pad + A/B/X/Y',
     joystickMode: 'dpad',
     buttons: ['A', 'B', 'X', 'Y']
   },
   shooter: {
+    category: 'base',
     description: 'Smooth stick + A/B/X/Y',
     joystickMode: 'smooth',
     buttons: ['A', 'B', 'X', 'Y']
   },
   driving: {
+    category: 'base',
     description: 'Smooth stick + A/B/L1/R1',
     joystickMode: 'smooth',
     buttons: ['A', 'B', 'L1', 'R1']
   },
   minimal: {
+    category: 'base',
     description: 'D-pad + A',
     joystickMode: 'dpad',
     buttons: ['A']
+  },
+  'ultimate-chicken-horse': {
+    category: 'game',
+    description: 'Ultimate Chicken Horse profile',
+    joystickMode: 'dpad',
+    buttons: ['A', 'B', 'X', 'Y']
+  },
+  'pico-park': {
+    category: 'game',
+    description: 'PICO PARK profile',
+    joystickMode: 'dpad',
+    buttons: ['A', 'B']
+  },
+  'boomerang-fu': {
+    category: 'game',
+    description: 'Boomerang Fu profile',
+    joystickMode: 'smooth',
+    buttons: ['A', 'B', 'X', 'Y']
+  },
+  'ibb-obb': {
+    category: 'game',
+    description: 'ibb & obb profile',
+    joystickMode: 'dpad',
+    buttons: ['A', 'B']
+  },
+  plateup: {
+    category: 'game',
+    description: 'PlateUp! profile',
+    joystickMode: 'dpad',
+    buttons: ['A', 'B', 'X', 'Y']
+  },
+  unrailed: {
+    category: 'game',
+    description: 'Unrailed! profile',
+    joystickMode: 'dpad',
+    buttons: ['A', 'B', 'X', 'Y']
+  },
+  stickfight: {
+    category: 'game',
+    description: 'Stick Fight: The Game profile',
+    joystickMode: 'smooth',
+    buttons: ['A', 'B', 'X', 'Y']
   }
+});
+const LAYOUT_PRESET_ALIASES = Object.freeze({
+  uch: 'ultimate-chicken-horse',
+  ultimatechickenhorse: 'ultimate-chicken-horse',
+  'ultimate-chicken': 'ultimate-chicken-horse',
+  picopark: 'pico-park',
+  pico: 'pico-park',
+  boomerangfu: 'boomerang-fu',
+  bummerangfu: 'boomerang-fu',
+  'bummerang-fu': 'boomerang-fu',
+  ibbobb: 'ibb-obb',
+  'ibb-and-obb': 'ibb-obb',
+  'plate-up': 'plateup',
+  'stickfight-the-game': 'stickfight'
 });
 
 const __filename = fileURLToPath(import.meta.url);
@@ -95,6 +156,28 @@ function sanitizeCsvKeys(rawValue) {
     .filter((item, index, array) => array.indexOf(item) === index);
 }
 
+function normalizePresetToken(rawValue) {
+  return String(rawValue ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function resolvePresetName(rawValue) {
+  const normalized = normalizePresetToken(rawValue);
+  if (!normalized) {
+    return '';
+  }
+
+  if (LAYOUT_PRESETS[normalized]) {
+    return normalized;
+  }
+
+  return LAYOUT_PRESET_ALIASES[normalized] ?? '';
+}
+
 function sanitizeJoystickMode(rawValue) {
   const value = String(rawValue ?? '').trim().toLowerCase();
   if (JOYSTICK_MODES.has(value)) {
@@ -119,12 +202,20 @@ function looksLikeUrl(value) {
 }
 
 function printLayoutOptions() {
-  console.log('Layout options:');
-  for (const [preset, definition] of Object.entries(LAYOUT_PRESETS)) {
+  console.log('Base layouts:');
+  for (const [preset, definition] of Object.entries(LAYOUT_PRESETS).filter(([, config]) => config.category === 'base')) {
     console.log(
       `  ${preset.padEnd(8)} joystick=${definition.joystickMode.padEnd(6)} buttons=${definition.buttons.join(',')}  ${definition.description}`
     );
   }
+  console.log('');
+  console.log('Game profiles:');
+  for (const [preset, definition] of Object.entries(LAYOUT_PRESETS).filter(([, config]) => config.category === 'game')) {
+    console.log(
+      `  ${preset.padEnd(24)} joystick=${definition.joystickMode.padEnd(6)} buttons=${definition.buttons.join(',')}  ${definition.description}`
+    );
+  }
+  console.log('  aliases: "ultimate chicken horse", "pico park", "bummerang fu", "ibb&obb", "plate up", "stickfight the game"');
   console.log('  custom   joystick=dpad|smooth|none  buttons=<csv>');
 }
 
@@ -133,6 +224,8 @@ function printLayoutExamples() {
   console.log('  phonepad');
   console.log('  phonepad classic');
   console.log('  phonepad shooter');
+  console.log('  phonepad "ultimate chicken horse"');
+  console.log('  phonepad "bummerang fu"');
   console.log('  phonepad --preset arcade --haptics off');
   console.log('  phonepad --joystick smooth --buttons A,B,X,Y');
   console.log('  phonepad --joystick none --buttons A,B,START,SELECT');
@@ -143,7 +236,7 @@ function printUsage() {
   console.log('Usage: phonepad [layout|url token] [options]');
   console.log('Options:');
   console.log('  --list-layouts                 Print layout options and exit');
-  console.log('  --preset, --layout <name>      Preset: classic|arcade|shooter|driving|minimal');
+  console.log('  --preset, --layout <name>      Preset/profile name (use --list-layouts)');
   console.log('  --joystick <dpad|smooth|none>  Joystick mode');
   console.log('  --buttons <csv>                Action buttons to show');
   console.log('  --inputs <csv>                 Full custom key list');
@@ -173,15 +266,16 @@ function resolveLayoutConfig({
   usedInputsOverride,
   usedHapticsOverride
 }) {
-  if (!LAYOUT_PRESETS[presetName]) {
+  const resolvedPresetName = resolvePresetName(presetName);
+  if (!resolvedPresetName) {
     console.error(`Unknown preset/layout: ${presetName}`);
     printLayoutOptions();
     process.exit(1);
   }
 
   const usingCustomOverrides = usedJoystickOverride || usedButtonsOverride || usedInputsOverride || usedHapticsOverride;
-  const preset = usingCustomOverrides ? 'custom' : presetName;
-  const basePreset = LAYOUT_PRESETS[presetName];
+  const preset = usingCustomOverrides ? 'custom' : resolvedPresetName;
+  const basePreset = LAYOUT_PRESETS[resolvedPresetName];
 
   const joystickMode = sanitizeJoystickMode(joystickValue || basePreset.joystickMode);
 
@@ -261,20 +355,20 @@ function parseArgs(rawArgs, defaults) {
         process.exit(1);
       }
 
-      presetName = next.trim().toLowerCase();
+      presetName = next.trim();
       presetExplicitlySet = true;
       index += 1;
       continue;
     }
 
     if (arg.startsWith('--preset=')) {
-      presetName = arg.slice('--preset='.length).trim().toLowerCase();
+      presetName = arg.slice('--preset='.length).trim();
       presetExplicitlySet = true;
       continue;
     }
 
     if (arg.startsWith('--layout=')) {
-      presetName = arg.slice('--layout='.length).trim().toLowerCase();
+      presetName = arg.slice('--layout='.length).trim();
       presetExplicitlySet = true;
       continue;
     }
@@ -398,11 +492,18 @@ function parseArgs(rawArgs, defaults) {
     positional.push(arg);
   }
 
-  if (positional.length > 0) {
-    const first = positional[0].trim().toLowerCase();
-    if (!presetExplicitlySet && LAYOUT_PRESETS[first]) {
-      presetName = first;
-      positional.shift();
+  if (!presetExplicitlySet && positional.length > 0 && !looksLikeUrl(positional[0])) {
+    const maxTokensToCheck = Math.min(positional.length, 6);
+    for (let count = maxTokensToCheck; count >= 1; count -= 1) {
+      const candidate = positional.slice(0, count).join(' ');
+      const resolved = resolvePresetName(candidate);
+      if (!resolved) {
+        continue;
+      }
+
+      presetName = resolved;
+      positional.splice(0, count);
+      break;
     }
   }
 
@@ -463,7 +564,7 @@ async function runPhonePadCommand(rawArgs) {
       fileEnv.PHONEPAD_PRESET,
       fileEnv.PHONEPAD_LAYOUT,
       'classic'
-    ).toLowerCase(),
+    ),
     joystickValue: readSetting(process.env.PHONEPAD_JOYSTICK, fileEnv.PHONEPAD_JOYSTICK),
     buttonsValue: readSetting(process.env.PHONEPAD_BUTTONS, fileEnv.PHONEPAD_BUTTONS),
     inputsValue: readSetting(process.env.PHONEPAD_INPUTS, fileEnv.PHONEPAD_INPUTS),
