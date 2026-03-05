@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 3017
 
-CMD ["node", "cli.js", "server"]
+CMD ["node", "--max-old-space-size=96", "cli.js", "server"]

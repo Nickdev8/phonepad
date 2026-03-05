@@ -1,14 +1,31 @@
 const statusElement = document.getElementById('status');
+const layoutInfoElement = document.getElementById('layout-info');
 const reconnectButton = document.getElementById('reconnect-now');
+const fullscreenButton = document.getElementById('fullscreen-now');
 const dpadElement = document.getElementById('dpad');
 const actionsElement = document.getElementById('actions');
 const extrasElement = document.getElementById('extras');
 
 const DEVICE_STORAGE_KEY = 'phonepad_device_id';
-const RETRY_SECONDS = 3;
+const TOKEN_STORAGE_KEY = 'phonepad_access_token';
 const AUTH_CHECK_TIMEOUT_MS = 3000;
-const SEND_INTERVAL_MS = 1000 / 60;
+const KEEPALIVE_INTERVAL_MS = 1000 / 12;
+const CONNECT_TIMEOUT_MS = 4000;
+const RETRY_BASE_MS = 250;
+const RETRY_MAX_MS = 3000;
+const RETRY_JITTER_MS = 150;
+const RETRY_CHECK_AUTH_AFTER = 3;
+const MAX_BUFFERED_BYTES = 128 * 1024;
+const HAPTIC_MIN_INTERVAL_MS = 25;
+const DIRECTION_THRESHOLD = 0.35;
 const DEFAULT_INPUTS = Object.freeze(['up', 'down', 'left', 'right', 'A', 'B']);
+const DIRECTION_KEYS = Object.freeze(['up', 'down', 'left', 'right']);
+const DEFAULT_CONTROLLER_CONFIG = Object.freeze({
+  preset: 'classic',
+  joystickMode: 'dpad',
+  buttons: ['A', 'B'],
+  haptics: true
+});
 const DPAD_LABELS = Object.freeze({
   up: '↑',
   down: '↓',
@@ -16,17 +33,29 @@ const DPAD_LABELS = Object.freeze({
   right: '→'
 });
 
-const token = new URLSearchParams(window.location.search).get('token') ?? '';
+const token = resolveAccessToken();
 const deviceId = getOrCreateDeviceId();
 
 let inputKeys = [...DEFAULT_INPUTS];
 let state = createState(inputKeys);
+let controllerConfig = {
+  preset: DEFAULT_CONTROLLER_CONFIG.preset,
+  joystickMode: DEFAULT_CONTROLLER_CONFIG.joystickMode,
+  buttons: [...DEFAULT_CONTROLLER_CONFIG.buttons],
+  haptics: DEFAULT_CONTROLLER_CONFIG.haptics
+};
+let directionKeys = resolveDirectionKeys(inputKeys);
 let socket = null;
 let retryTimer = null;
 let retryCountdownTimer = null;
 let retrySecondsRemaining = 0;
 let connectAttemptInFlight = false;
 let controlsReady = false;
+let retryAttempts = 0;
+let attemptedAutoFullscreen = false;
+let hapticsEnabled = true;
+let lastHapticAt = 0;
+let smoothCleanup = null;
 
 function createDeviceId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
@@ -51,6 +80,21 @@ function getOrCreateDeviceId() {
   }
 }
 
+function resolveAccessToken() {
+  const fromQuery = (new URLSearchParams(window.location.search).get('token') ?? '').trim();
+
+  try {
+    if (fromQuery) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, fromQuery);
+      return fromQuery;
+    }
+
+    return (localStorage.getItem(TOKEN_STORAGE_KEY) ?? '').trim();
+  } catch {
+    return fromQuery;
+  }
+}
+
 function sanitizeInputKeys(rawKeys) {
   if (!Array.isArray(rawKeys)) {
     return [...DEFAULT_INPUTS];
@@ -64,11 +108,7 @@ function sanitizeInputKeys(rawKeys) {
       continue;
     }
 
-    if (!/^[A-Za-z0-9_-]+$/.test(key)) {
-      continue;
-    }
-
-    if (seen.has(key)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(key) || seen.has(key)) {
       continue;
     }
 
@@ -77,6 +117,48 @@ function sanitizeInputKeys(rawKeys) {
   }
 
   return sanitized.length > 0 ? sanitized : [...DEFAULT_INPUTS];
+}
+
+function sanitizeJoystickMode(rawMode) {
+  const mode = String(rawMode ?? '').trim().toLowerCase();
+  if (mode === 'smooth' || mode === 'none') {
+    return mode;
+  }
+
+  return 'dpad';
+}
+
+function sanitizeButtons(rawButtons, keys) {
+  const allowed = new Set(keys);
+  const sanitized = [];
+  const seen = new Set();
+
+  for (const candidate of Array.isArray(rawButtons) ? rawButtons : []) {
+    const key = String(candidate ?? '').trim();
+    if (!key || seen.has(key) || !allowed.has(key) || isDpadKey(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    sanitized.push(key);
+  }
+
+  return sanitized;
+}
+
+function sanitizeControllerConfig(rawConfig, keys) {
+  const payload = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+  const directions = resolveDirectionKeys(keys);
+  const hasDirections = DIRECTION_KEYS.some((direction) => Boolean(directions[direction]));
+  const sanitizedButtons = sanitizeButtons(payload.buttons, keys);
+  const fallbackButtons = keys.filter((key) => !isDpadKey(key));
+
+  return {
+    preset: String(payload.preset ?? DEFAULT_CONTROLLER_CONFIG.preset).trim() || DEFAULT_CONTROLLER_CONFIG.preset,
+    joystickMode: hasDirections ? sanitizeJoystickMode(payload.joystickMode) : 'none',
+    buttons: sanitizedButtons.length > 0 ? sanitizedButtons : fallbackButtons,
+    haptics: payload.haptics !== false
+  };
 }
 
 function createState(keys) {
@@ -88,13 +170,26 @@ function createState(keys) {
   return nextState;
 }
 
-function isDpadKey(key) {
-  const normalized = key.toLowerCase();
-  return normalized === 'up' || normalized === 'down' || normalized === 'left' || normalized === 'right';
+function resolveDirectionKeys(keys) {
+  const resolved = {
+    up: '',
+    down: '',
+    left: '',
+    right: ''
+  };
+
+  for (const key of keys) {
+    const normalized = key.toLowerCase();
+    if (!resolved[normalized] && DIRECTION_KEYS.includes(normalized)) {
+      resolved[normalized] = key;
+    }
+  }
+
+  return resolved;
 }
 
-function getDpadSlot(key) {
-  return key.toLowerCase();
+function isDpadKey(key) {
+  return DIRECTION_KEYS.includes(key.toLowerCase());
 }
 
 function getControlLabel(key) {
@@ -111,8 +206,66 @@ function setStatus(text, type) {
   statusElement.className = `status ${type}`;
 }
 
+function setLayoutInfo() {
+  if (!layoutInfoElement) {
+    return;
+  }
+
+  const joystickLabel =
+    controllerConfig.joystickMode === 'smooth'
+      ? 'smooth stick'
+      : controllerConfig.joystickMode === 'none'
+        ? 'no stick'
+        : 'd-pad';
+
+  const buttonCount = inputKeys.filter((key) => !isDpadKey(key)).length;
+  const buttonText = `${buttonCount} button${buttonCount === 1 ? '' : 's'}`;
+  layoutInfoElement.textContent = `${controllerConfig.preset} | ${joystickLabel} | ${buttonText} | haptics ${
+    controllerConfig.haptics ? 'on' : 'off'
+  }`;
+}
+
 function setReconnectVisible(visible) {
   reconnectButton.hidden = !visible;
+}
+
+function canRequestFullscreen() {
+  return typeof document.documentElement.requestFullscreen === 'function';
+}
+
+async function enterFullscreen() {
+  if (!canRequestFullscreen() || document.fullscreenElement) {
+    return;
+  }
+
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+  } catch {
+    // ignored: browser can reject without a direct user gesture
+  }
+}
+
+function updateFullscreenButton() {
+  if (!canRequestFullscreen()) {
+    fullscreenButton.hidden = true;
+    return;
+  }
+
+  fullscreenButton.hidden = Boolean(document.fullscreenElement);
+}
+
+function triggerHaptic(intensity = 'light') {
+  if (!hapticsEnabled || typeof navigator.vibrate !== 'function') {
+    return;
+  }
+
+  const now = performance.now();
+  if (now - lastHapticAt < HAPTIC_MIN_INTERVAL_MS) {
+    return;
+  }
+
+  lastHapticAt = now;
+  navigator.vibrate(intensity === 'strong' ? 15 : 8);
 }
 
 function clearRetryTimers() {
@@ -125,6 +278,13 @@ function clearRetryTimers() {
     clearInterval(retryCountdownTimer);
     retryCountdownTimer = null;
   }
+}
+
+function getRetryDelayMs() {
+  const exponential = RETRY_BASE_MS * 2 ** Math.min(retryAttempts, 5);
+  const bounded = Math.min(RETRY_MAX_MS, exponential);
+  const jitter = Math.floor(Math.random() * RETRY_JITTER_MS);
+  return bounded + jitter;
 }
 
 function buildConfigUrl() {
@@ -151,6 +311,7 @@ function buildWsUrl() {
   if (token) {
     wsUrl.searchParams.set('token', token);
   }
+
   wsUrl.searchParams.set('device', deviceId);
   return wsUrl.toString();
 }
@@ -173,21 +334,24 @@ async function loadControllerConfig() {
   try {
     const response = await fetchWithTimeout(buildConfigUrl());
     if (response.status === 401) {
-      return { ok: false, invalidUrl: true, inputs: [] };
+      return { ok: false, invalidUrl: true, inputs: [], config: null };
     }
 
     if (!response.ok) {
-      return { ok: false, invalidUrl: false, inputs: [] };
+      return { ok: false, invalidUrl: false, inputs: [], config: null };
     }
 
     const payload = await response.json();
+    const nextInputs = sanitizeInputKeys(payload.inputs);
+
     return {
       ok: true,
       invalidUrl: false,
-      inputs: sanitizeInputKeys(payload.inputs)
+      inputs: nextInputs,
+      config: sanitizeControllerConfig(payload, nextInputs)
     };
   } catch {
-    return { ok: false, invalidUrl: false, inputs: [] };
+    return { ok: false, invalidUrl: false, inputs: [], config: null };
   }
 }
 
@@ -206,7 +370,16 @@ async function checkControllerUrl() {
 
 function scheduleRetry(reason, nextStep) {
   clearRetryTimers();
-  retrySecondsRemaining = RETRY_SECONDS;
+
+  if (!navigator.onLine) {
+    setReconnectVisible(true);
+    setStatus('offline. waiting for network', 'retrying');
+    return;
+  }
+
+  retryAttempts += 1;
+  const retryDelayMs = getRetryDelayMs();
+  retrySecondsRemaining = Math.max(1, Math.ceil(retryDelayMs / 1000));
   setReconnectVisible(true);
   setStatus(`${reason}. retrying in ${retrySecondsRemaining}s`, 'retrying');
 
@@ -220,11 +393,15 @@ function scheduleRetry(reason, nextStep) {
   retryTimer = setTimeout(() => {
     clearRetryTimers();
     nextStep();
-  }, RETRY_SECONDS * 1000);
+  }, retryDelayMs);
 }
 
 function sendState() {
   if (!controlsReady || !socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
     return;
   }
 
@@ -238,12 +415,52 @@ function sendState() {
 
 function setButtonState(button, key, pressed) {
   if (state[key] === pressed) {
-    return;
+    return false;
   }
 
   state[key] = pressed;
   button.classList.toggle('active', pressed);
   sendState();
+  return true;
+}
+
+function setDirectionalStates(nextDirections, smoothElement = null, vibrateOnPress = true) {
+  let changed = false;
+  let pressedDirection = false;
+
+  for (const direction of DIRECTION_KEYS) {
+    const mappedKey = directionKeys[direction];
+    if (!mappedKey) {
+      continue;
+    }
+
+    const nextValue = Boolean(nextDirections[direction]);
+    if (state[mappedKey] === nextValue) {
+      continue;
+    }
+
+    if (nextValue) {
+      pressedDirection = true;
+    }
+
+    state[mappedKey] = nextValue;
+    changed = true;
+  }
+
+  if (smoothElement) {
+    for (const direction of DIRECTION_KEYS) {
+      smoothElement.classList.toggle(`active-${direction}`, Boolean(nextDirections[direction]));
+    }
+  }
+
+  if (!changed) {
+    return;
+  }
+
+  sendState();
+  if (vibrateOnPress && pressedDirection) {
+    triggerHaptic('light');
+  }
 }
 
 function bindButton(button, key) {
@@ -253,7 +470,9 @@ function bindButton(button, key) {
       button.setPointerCapture(event.pointerId);
     }
 
-    setButtonState(button, key, true);
+    if (setButtonState(button, key, true)) {
+      triggerHaptic('light');
+    }
   };
 
   const release = (event) => {
@@ -272,16 +491,16 @@ function bindButton(button, key) {
   button.addEventListener('contextmenu', (event) => event.preventDefault());
 }
 
-function createControlButton(key) {
+function createControlButton(key, dpadSlot = '') {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'control-btn';
   button.dataset.key = key;
   button.textContent = getControlLabel(key);
 
-  if (isDpadKey(key)) {
+  if (dpadSlot) {
     button.classList.add('dpad-btn');
-    button.dataset.slot = getDpadSlot(key);
+    button.dataset.slot = dpadSlot;
   } else {
     button.classList.add('action-btn');
   }
@@ -290,35 +509,202 @@ function createControlButton(key) {
   return button;
 }
 
-function renderControls(keys) {
+function clearSmoothStick() {
+  if (typeof smoothCleanup === 'function') {
+    smoothCleanup();
+  }
+
+  smoothCleanup = null;
+}
+
+function createSmoothStick() {
+  const container = document.createElement('div');
+  container.className = 'smooth-stick';
+  container.dataset.active = '0';
+
+  const axisHorizontal = document.createElement('div');
+  axisHorizontal.className = 'smooth-axis smooth-axis-x';
+  const axisVertical = document.createElement('div');
+  axisVertical.className = 'smooth-axis smooth-axis-y';
+  const ring = document.createElement('div');
+  ring.className = 'smooth-ring';
+  const knob = document.createElement('div');
+  knob.className = 'smooth-knob';
+
+  container.appendChild(axisHorizontal);
+  container.appendChild(axisVertical);
+  container.appendChild(ring);
+  container.appendChild(knob);
+
+  let activePointerId = null;
+  const abortController = new AbortController();
+  const listenerOptions = { signal: abortController.signal };
+
+  const updateKnob = (dx, dy) => {
+    knob.style.transform = `translate(calc(-50% + ${Math.round(dx)}px), calc(-50% + ${Math.round(dy)}px))`;
+  };
+
+  const resetStick = () => {
+    container.dataset.active = '0';
+    updateKnob(0, 0);
+    setDirectionalStates(
+      {
+        up: false,
+        down: false,
+        left: false,
+        right: false
+      },
+      container,
+      false
+    );
+  };
+
+  const applyPointer = (event) => {
+    const rect = container.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const radius = Math.max(1, Math.min(rect.width, rect.height) / 2 - 16);
+
+    let dx = event.clientX - centerX;
+    let dy = event.clientY - centerY;
+    const distance = Math.hypot(dx, dy);
+    if (distance > radius) {
+      const scale = radius / distance;
+      dx *= scale;
+      dy *= scale;
+    }
+
+    container.dataset.active = '1';
+    updateKnob(dx, dy);
+
+    const normalizedX = dx / radius;
+    const normalizedY = dy / radius;
+    setDirectionalStates(
+      {
+        left: normalizedX < -DIRECTION_THRESHOLD,
+        right: normalizedX > DIRECTION_THRESHOLD,
+        up: normalizedY < -DIRECTION_THRESHOLD,
+        down: normalizedY > DIRECTION_THRESHOLD
+      },
+      container,
+      true
+    );
+  };
+
+  container.addEventListener(
+    'pointerdown',
+    (event) => {
+      event.preventDefault();
+      activePointerId = event.pointerId;
+      try {
+        container.setPointerCapture(event.pointerId);
+      } catch {
+        // Some browsers reject pointer capture on edge cases.
+      }
+      applyPointer(event);
+      triggerHaptic('strong');
+    },
+    listenerOptions
+  );
+
+  container.addEventListener(
+    'pointermove',
+    (event) => {
+      if (event.pointerId !== activePointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      applyPointer(event);
+    },
+    listenerOptions
+  );
+
+  const release = (event) => {
+    if (event.pointerId !== activePointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    activePointerId = null;
+    resetStick();
+  };
+
+  container.addEventListener('pointerup', release, listenerOptions);
+  container.addEventListener('pointercancel', release, listenerOptions);
+  container.addEventListener(
+    'pointerleave',
+    (event) => {
+      if (event.pointerId !== activePointerId || event.buttons !== 0) {
+        return;
+      }
+
+      release(event);
+    },
+    listenerOptions
+  );
+  container.addEventListener('contextmenu', (event) => event.preventDefault(), listenerOptions);
+
+  resetStick();
+
+  return {
+    element: container,
+    cleanup: () => {
+      abortController.abort();
+      activePointerId = null;
+    }
+  };
+}
+
+function renderControls() {
+  clearSmoothStick();
+  dpadElement.classList.remove('smooth-host');
+
   dpadElement.innerHTML = '';
   actionsElement.innerHTML = '';
   extrasElement.innerHTML = '';
 
-  const actionKeys = [];
-  const extraKeys = [];
-  for (const key of keys) {
-    if (isDpadKey(key)) {
-      dpadElement.appendChild(createControlButton(key));
+  const hasDirections = DIRECTION_KEYS.some((direction) => Boolean(directionKeys[direction]));
+  if (controllerConfig.joystickMode === 'dpad' && hasDirections) {
+    for (const direction of DIRECTION_KEYS) {
+      const key = directionKeys[direction];
+      if (!key) {
+        continue;
+      }
+
+      dpadElement.appendChild(createControlButton(key, direction));
+    }
+  } else if (controllerConfig.joystickMode === 'smooth' && hasDirections) {
+    dpadElement.classList.add('smooth-host');
+    const smoothStick = createSmoothStick();
+    dpadElement.appendChild(smoothStick.element);
+    smoothCleanup = smoothStick.cleanup;
+  }
+
+  const requestedButtons = sanitizeButtons(controllerConfig.buttons, inputKeys);
+  const defaultButtons = inputKeys.filter((key) => !isDpadKey(key));
+  const primaryButtons = (requestedButtons.length > 0 ? requestedButtons : defaultButtons).slice(0, 8);
+
+  const extras = [];
+  const primarySet = new Set(primaryButtons);
+
+  for (const key of inputKeys) {
+    if (isDpadKey(key) || primarySet.has(key)) {
       continue;
     }
 
-    if (actionKeys.length < 8) {
-      actionKeys.push(key);
-    } else {
-      extraKeys.push(key);
-    }
+    extras.push(key);
   }
 
-  for (const key of actionKeys) {
+  for (const key of primaryButtons) {
     actionsElement.appendChild(createControlButton(key));
   }
 
-  for (const key of extraKeys) {
+  for (const key of extras) {
     extrasElement.appendChild(createControlButton(key));
   }
 
-  extrasElement.hidden = extraKeys.length === 0;
+  extrasElement.hidden = extras.length === 0;
   dpadElement.hidden = dpadElement.children.length === 0;
   actionsElement.hidden = actionsElement.children.length === 0;
 }
@@ -328,29 +714,26 @@ async function connectWebSocket() {
     return;
   }
 
+  if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+    return;
+  }
+
   connectAttemptInFlight = true;
   clearRetryTimers();
   setReconnectVisible(false);
-  setStatus('checking controller URL...', 'connecting');
-
-  const check = await checkControllerUrl();
-  if (check.invalidUrl) {
-    setStatus('invalid controller URL (missing or wrong token)', 'error');
-    connectAttemptInFlight = false;
-    return;
-  }
-
-  if (!check.ok) {
-    connectAttemptInFlight = false;
-    scheduleRetry('failed to reach server', connectWebSocket);
-    return;
-  }
-
   setStatus('trying to connect...', 'connecting');
   const activeSocket = new WebSocket(buildWsUrl());
   socket = activeSocket;
+
   let opened = false;
-  connectAttemptInFlight = false;
+  const connectTimeout = setTimeout(() => {
+    if (socket !== activeSocket || opened) {
+      return;
+    }
+
+    activeSocket.close();
+  }, CONNECT_TIMEOUT_MS);
+  connectTimeout.unref?.();
 
   activeSocket.addEventListener('open', () => {
     if (socket !== activeSocket) {
@@ -358,9 +741,13 @@ async function connectWebSocket() {
     }
 
     opened = true;
+    connectAttemptInFlight = false;
+    clearTimeout(connectTimeout);
     clearRetryTimers();
+    retryAttempts = 0;
     setReconnectVisible(false);
     setStatus('connected', 'connected');
+    sendState();
   });
 
   activeSocket.addEventListener('close', async () => {
@@ -368,34 +755,33 @@ async function connectWebSocket() {
       return;
     }
 
+    clearTimeout(connectTimeout);
     socket = null;
-    if (opened) {
-      scheduleRetry('disconnected', connectWebSocket);
-      return;
+    connectAttemptInFlight = false;
+
+    const reason = opened ? 'disconnected' : 'failed to connect';
+    if (!opened && retryAttempts >= RETRY_CHECK_AUTH_AFTER) {
+      const postCloseCheck = await checkControllerUrl();
+      if (socket !== null) {
+        return;
+      }
+
+      if (postCloseCheck.invalidUrl) {
+        setReconnectVisible(false);
+        setStatus('invalid controller URL (missing or wrong token)', 'error');
+        return;
+      }
     }
 
-    const postCloseCheck = await checkControllerUrl();
-    if (socket !== null) {
-      return;
-    }
-
-    if (postCloseCheck.invalidUrl) {
-      setReconnectVisible(false);
-      setStatus('invalid controller URL (missing or wrong token)', 'error');
-      return;
-    }
-
-    scheduleRetry('failed to connect', connectWebSocket);
+    scheduleRetry(reason, connectWebSocket);
   });
 
   activeSocket.addEventListener('error', () => {
-    if (socket !== activeSocket) {
+    if (socket !== activeSocket || opened) {
       return;
     }
 
-    if (!opened) {
-      setStatus('connection failed', 'disconnected');
-    }
+    setStatus('connection failed', 'disconnected');
   });
 }
 
@@ -405,24 +791,34 @@ async function initController() {
 
   const config = await loadControllerConfig();
   if (config.invalidUrl) {
+    retryAttempts = 0;
     setStatus('invalid controller URL (missing or wrong token)', 'error');
     return;
   }
 
-  if (!config.ok) {
+  if (!config.ok || !config.config) {
     scheduleRetry('failed to load controller config', initController);
     return;
   }
 
   inputKeys = config.inputs;
   state = createState(inputKeys);
-  renderControls(inputKeys);
+  directionKeys = resolveDirectionKeys(inputKeys);
+  controllerConfig = config.config;
+  hapticsEnabled = controllerConfig.haptics;
+
+  renderControls();
+  setLayoutInfo();
+
   controlsReady = true;
+  retryAttempts = 0;
   connectWebSocket();
 }
 
 reconnectButton.addEventListener('click', () => {
   clearRetryTimers();
+  retryAttempts = 0;
+
   if (!controlsReady) {
     initController();
     return;
@@ -431,5 +827,45 @@ reconnectButton.addEventListener('click', () => {
   connectWebSocket();
 });
 
-setInterval(sendState, SEND_INTERVAL_MS);
+fullscreenButton.addEventListener('click', () => {
+  enterFullscreen();
+});
+
+window.addEventListener('offline', () => {
+  clearRetryTimers();
+  setReconnectVisible(true);
+  setStatus('offline. waiting for network', 'retrying');
+});
+
+window.addEventListener('online', () => {
+  clearRetryTimers();
+  retryAttempts = 0;
+  if (!controlsReady) {
+    initController();
+    return;
+  }
+
+  connectWebSocket();
+});
+
+document.addEventListener('fullscreenchange', () => {
+  updateFullscreenButton();
+});
+
+document.addEventListener(
+  'pointerdown',
+  () => {
+    if (attemptedAutoFullscreen) {
+      return;
+    }
+
+    attemptedAutoFullscreen = true;
+    enterFullscreen();
+  },
+  { passive: true }
+);
+
+setInterval(sendState, KEEPALIVE_INTERVAL_MS);
+updateFullscreenButton();
+setLayoutInfo();
 initController();

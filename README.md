@@ -15,7 +15,11 @@ node cli.js server
 2. Set:
    - `PHONEPAD_PUBLIC_URL` to your public HTTPS URL (for example `https://phonepad.nickesselman.nl`)
    - `PHONEPAD_ACCESS_TOKEN` to a long random secret
-   - optional: `PHONEPAD_INPUTS` comma list (for example `up,down,left,right,A,B,X,Y`)
+   - optional: `PHONEPAD_PRESET` one of `classic|arcade|shooter|driving|minimal`
+   - optional: `PHONEPAD_JOYSTICK` one of `dpad|smooth|none`
+   - optional: `PHONEPAD_BUTTONS` comma list (for example `A,B,X,Y`)
+   - optional: `PHONEPAD_INPUTS` full comma list override (for example `up,down,left,right,A,B,X,Y`)
+   - optional: `PHONEPAD_HAPTICS=on|off`
 3. Start:
 
 ```bash
@@ -34,21 +38,39 @@ The URL includes `?token=...`. Keep that link private.
 
 Point your subdomain (or tunnel) to this container's `3017` port and keep WebSocket upgrade support enabled.
 
-## Choose which inputs the phone shows
+## Fullscreen on phone
 
-Server controls the visible controls.
+The page now supports both portrait and landscape with no scrolling.
+For true browser-chrome-free fullscreen on mobile, open from home screen (PWA standalone) or tap the `Fullscreen` button.
+When a token is present in the URL once, the controller caches it locally so standalone launches keep working.
 
-With env:
+## Layout setup command
+
+The server controls the visible controls. When `phonepad server` starts, it prints layout options and quick examples before the QR code.
+
+List all layouts:
 
 ```bash
-PHONEPAD_INPUTS=up,down,left,right,A,B,X,Y node cli.js server
+phonepad server --list-layouts
 ```
 
-Or CLI flag:
+Preset layouts:
 
 ```bash
-phonepad server --inputs up,down,left,right,A,B,X,Y
+phonepad server --preset arcade
+phonepad server --preset shooter
 ```
+
+Custom layouts:
+
+```bash
+phonepad server --joystick smooth --buttons A,B,X,Y
+phonepad server --joystick none --buttons A,B,START,SELECT
+phonepad server --inputs throttle,brake,gearUp,gearDown
+phonepad server --preset driving --haptics off
+```
+
+Environment equivalents also work (`PHONEPAD_PRESET`, `PHONEPAD_JOYSTICK`, `PHONEPAD_BUTTONS`, `PHONEPAD_INPUTS`, `PHONEPAD_HAPTICS`).
 
 ## Debug state
 
@@ -63,6 +85,13 @@ curl "https://phonepad.nickesselman.nl/state?token=YOUR_TOKEN"
 The controller stores a persistent `deviceId` in browser local storage and reuses the same player id after refresh/reconnect.
 This is more reliable than IP or MAC (not available/stable in browsers across networks).
 Server keeps this mapping for 24 hours of inactivity by default.
+
+## Connection stability behavior
+
+- Adaptive reconnect backoff: starts fast and grows up to 3s.
+- Offline-aware retry: if phone goes offline, it waits for network restore.
+- Controller keeps sending low-overhead keepalive updates plus immediate state-change updates.
+- Server heartbeat runs only while clients are connected (lower idle CPU).
 
 ## Real-time input listener (recommended for games)
 

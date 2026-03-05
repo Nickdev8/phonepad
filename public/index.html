@@ -2,8 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PhonePad" />
     <title>PhonePad Controller</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -11,7 +20,11 @@
       <header class="top">
         <h1>PhonePad</h1>
         <p id="status" class="status connecting">connecting...</p>
-        <button id="reconnect-now" class="retry-btn" type="button" hidden>Reconnect now</button>
+        <p id="layout-info" class="layout-info">loading layout...</p>
+        <div class="top-actions">
+          <button id="reconnect-now" class="retry-btn" type="button" hidden>Reconnect now</button>
+          <button id="fullscreen-now" class="retry-btn" type="button" hidden>Fullscreen</button>
+        </div>
       </header>
 
       <section class="controller" id="controller">
