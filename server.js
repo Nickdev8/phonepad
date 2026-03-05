@@ -179,8 +179,20 @@ export function startPhonePadServer({
   const createEmptyState = () =>
     Object.fromEntries(configuredInputKeys.map((key) => [key, false]));
 
-  const normalizeState = (input = {}) =>
-    Object.fromEntries(configuredInputKeys.map((key) => [key, Boolean(input[key])]));
+  const normalizeState = (input = {}) => {
+    const normalized = Object.fromEntries(configuredInputKeys.map((key) => [key, Boolean(input[key])]));
+
+    for (const [rawKey, rawValue] of Object.entries(input)) {
+      const key = String(rawKey ?? '').trim();
+      if (!key || key.length > 24 || !/^[A-Za-z0-9_-]+$/.test(key) || Object.hasOwn(normalized, key)) {
+        continue;
+      }
+
+      normalized[key] = Boolean(rawValue);
+    }
+
+    return normalized;
+  };
 
   app.use(express.static(path.join(__dirname, 'public')));
 
@@ -538,4 +550,84 @@ export function startPhonePadServer({
       });
     });
   });
+}
+
+function parseEnvCsv(rawValue) {
+  return String(rawValue ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item && item.length <= 24 && /^[A-Za-z0-9_-]+$/.test(item))
+    .filter((item, index, array) => array.indexOf(item) === index);
+}
+
+function parseEnvHaptics(rawValue) {
+  const value = String(rawValue ?? '').trim().toLowerCase();
+  if (!value) {
+    return true;
+  }
+
+  return !(value === 'off' || value === 'false' || value === '0' || value === 'no');
+}
+
+async function runFromEnv() {
+  const configuredPort = Number.parseInt(process.env.PHONEPAD_PORT ?? '3000', 10);
+  const port = Number.isFinite(configuredPort) ? configuredPort : 3000;
+  const host = process.env.PHONEPAD_HOST?.trim() || '0.0.0.0';
+  const accessToken = process.env.PHONEPAD_ACCESS_TOKEN?.trim() || '';
+  const publicUrl = process.env.PHONEPAD_PUBLIC_URL?.trim() || '';
+
+  if (publicUrl && !accessToken) {
+    console.error('PHONEPAD_ACCESS_TOKEN is required when PHONEPAD_PUBLIC_URL is set.');
+    process.exit(1);
+  }
+
+  let runningServer;
+  try {
+    runningServer = await startPhonePadServer({
+      port,
+      host,
+      accessToken,
+      inputKeys: process.env.PHONEPAD_INPUTS?.trim() || DEFAULT_INPUT_KEYS,
+      controllerConfig: {
+        preset: process.env.PHONEPAD_PRESET?.trim() || 'classic',
+        joystickMode: process.env.PHONEPAD_JOYSTICK?.trim() || 'dpad',
+        buttons: parseEnvCsv(process.env.PHONEPAD_BUTTONS),
+        haptics: parseEnvHaptics(process.env.PHONEPAD_HAPTICS)
+      }
+    });
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use.`);
+      process.exit(1);
+    }
+
+    console.error(`Failed to start PhonePad server: ${error.message}`);
+    process.exit(1);
+  }
+
+  console.log('PhonePad server running');
+  console.log(`Listening on ${host}:${port}`);
+  if (publicUrl) {
+    console.log(`Public URL: ${publicUrl}`);
+  }
+  if (accessToken) {
+    console.log('Access token: enabled');
+  } else {
+    console.warn('Access token: disabled');
+  }
+
+  const shutdown = async () => {
+    try {
+      await runningServer.stop();
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  runFromEnv();
 }

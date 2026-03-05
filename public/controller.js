@@ -33,8 +33,10 @@ const DPAD_LABELS = Object.freeze({
   right: '→'
 });
 
-const token = resolveAccessToken();
+const urlParams = new URLSearchParams(window.location.search);
+const token = resolveAccessToken(urlParams);
 const deviceId = getOrCreateDeviceId();
+const layoutOverrides = parseLayoutOverrides(urlParams);
 
 let inputKeys = [...DEFAULT_INPUTS];
 let state = createState(inputKeys);
@@ -80,8 +82,8 @@ function getOrCreateDeviceId() {
   }
 }
 
-function resolveAccessToken() {
-  const fromQuery = (new URLSearchParams(window.location.search).get('token') ?? '').trim();
+function resolveAccessToken(searchParams) {
+  const fromQuery = (searchParams.get('token') ?? '').trim();
 
   try {
     if (fromQuery) {
@@ -93,6 +95,41 @@ function resolveAccessToken() {
   } catch {
     return fromQuery;
   }
+}
+
+function sanitizeCsvKeys(rawValue) {
+  return String(rawValue ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item && item.length <= 24 && /^[A-Za-z0-9_-]+$/.test(item))
+    .filter((item, index, array) => array.indexOf(item) === index);
+}
+
+function parseOptionalHaptics(rawValue) {
+  if (typeof rawValue !== 'string' || !rawValue.trim()) {
+    return null;
+  }
+
+  const value = rawValue.trim().toLowerCase();
+  if (value === 'off' || value === 'false' || value === '0' || value === 'no') {
+    return false;
+  }
+
+  if (value === 'on' || value === 'true' || value === '1' || value === 'yes') {
+    return true;
+  }
+
+  return null;
+}
+
+function parseLayoutOverrides(searchParams) {
+  return {
+    preset: (searchParams.get('preset') ?? searchParams.get('layout') ?? '').trim().toLowerCase(),
+    joystickMode: searchParams.has('joystick') ? sanitizeJoystickMode(searchParams.get('joystick')) : '',
+    buttons: sanitizeCsvKeys(searchParams.get('buttons')),
+    inputs: sanitizeCsvKeys(searchParams.get('inputs')),
+    haptics: parseOptionalHaptics(searchParams.get('haptics'))
+  };
 }
 
 function sanitizeInputKeys(rawKeys) {
@@ -342,13 +379,29 @@ async function loadControllerConfig() {
     }
 
     const payload = await response.json();
-    const nextInputs = sanitizeInputKeys(payload.inputs);
+    const nextInputs =
+      layoutOverrides.inputs.length > 0 ? sanitizeInputKeys(layoutOverrides.inputs) : sanitizeInputKeys(payload.inputs);
+    const mergedConfig = {
+      ...sanitizeControllerConfig(payload, nextInputs)
+    };
+    if (layoutOverrides.preset) {
+      mergedConfig.preset = layoutOverrides.preset;
+    }
+    if (layoutOverrides.joystickMode) {
+      mergedConfig.joystickMode = layoutOverrides.joystickMode;
+    }
+    if (layoutOverrides.buttons.length > 0) {
+      mergedConfig.buttons = layoutOverrides.buttons;
+    }
+    if (layoutOverrides.haptics !== null) {
+      mergedConfig.haptics = layoutOverrides.haptics;
+    }
 
     return {
       ok: true,
       invalidUrl: false,
       inputs: nextInputs,
-      config: sanitizeControllerConfig(payload, nextInputs)
+      config: sanitizeControllerConfig(mergedConfig, nextInputs)
     };
   } catch {
     return { ok: false, invalidUrl: false, inputs: [], config: null };

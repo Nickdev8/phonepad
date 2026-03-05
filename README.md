@@ -6,7 +6,7 @@ Minimal smartphone controller over WebSockets.
 
 ```bash
 npm install
-node cli.js server
+node server.js
 ```
 
 ## Public run (server/subdomain)
@@ -15,11 +15,6 @@ node cli.js server
 2. Set:
    - `PHONEPAD_PUBLIC_URL` to your public HTTPS URL (for example `https://phonepad.nickesselman.nl`)
    - `PHONEPAD_ACCESS_TOKEN` to a long random secret
-   - optional: `PHONEPAD_PRESET` one of `classic|arcade|shooter|driving|minimal`
-   - optional: `PHONEPAD_JOYSTICK` one of `dpad|smooth|none`
-   - optional: `PHONEPAD_BUTTONS` comma list (for example `A,B,X,Y`)
-   - optional: `PHONEPAD_INPUTS` full comma list override (for example `up,down,left,right,A,B,X,Y`)
-   - optional: `PHONEPAD_HAPTICS=on|off`
 3. Start:
 
 ```bash
@@ -46,31 +41,32 @@ When a token is present in the URL once, the controller caches it locally so sta
 
 ## Layout setup command
 
-The server controls the visible controls. When `phonepad server` starts, it prints layout options and quick examples before the QR code.
+The laptop command controls the visible controls. Layout is encoded in the QR URL, so you do not need to reconfigure Docker/server for presets.
 
 List all layouts:
 
 ```bash
-phonepad server --list-layouts
+phonepad --list-layouts
 ```
 
 Preset layouts:
 
 ```bash
-phonepad server --preset arcade
-phonepad server --preset shooter
+phonepad arcade
+phonepad shooter
+phonepad --preset minimal
 ```
 
 Custom layouts:
 
 ```bash
-phonepad server --joystick smooth --buttons A,B,X,Y
-phonepad server --joystick none --buttons A,B,START,SELECT
-phonepad server --inputs throttle,brake,gearUp,gearDown
-phonepad server --preset driving --haptics off
+phonepad --joystick smooth --buttons A,B,X,Y
+phonepad --joystick none --buttons A,B,START,SELECT
+phonepad --inputs throttle,brake,gearUp,gearDown
+phonepad --preset driving --haptics off
 ```
 
-Environment equivalents also work (`PHONEPAD_PRESET`, `PHONEPAD_JOYSTICK`, `PHONEPAD_BUTTONS`, `PHONEPAD_INPUTS`, `PHONEPAD_HAPTICS`).
+`phonepad` (no args) uses URL/token from `.env` and default `classic` layout.
 
 ## Debug state
 
@@ -126,18 +122,16 @@ If `/dev/uinput` is permission denied, run the client with sudo or grant your us
 It reads `.env` by default:
 
 ```bash
-phonepad client
+phonepad
 ```
 
-`npm run client` also works and runs the same command.
+`npm run client` also runs the same command.
 The command prints a QR code and keeps running until `Ctrl+C`.
-
-Plain `phonepad` also starts this client mode.
 
 Or pass URL/token explicitly:
 
 ```bash
-node client.js https://phonepad.nickesselman.nl YOUR_TOKEN
+phonepad https://phonepad.nickesselman.nl YOUR_TOKEN
 ```
 
 ### 3) Test in browser
