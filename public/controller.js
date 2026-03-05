@@ -10,6 +10,7 @@ const state = {
 };
 
 let socket;
+const token = new URLSearchParams(window.location.search).get('token') ?? '';
 
 function setConnectionStatus(isConnected) {
   statusElement.textContent = isConnected ? 'connected' : 'disconnected';
@@ -19,7 +20,12 @@ function setConnectionStatus(isConnected) {
 
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+  const wsUrl = new URL(`${protocol}://${window.location.host}/ws`);
+  if (token) {
+    wsUrl.searchParams.set('token', token);
+  }
+
+  socket = new WebSocket(wsUrl.toString());
 
   socket.addEventListener('open', () => {
     setConnectionStatus(true);

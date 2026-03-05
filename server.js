@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,22 +28,92 @@ function normalizeState(input = {}) {
   };
 }
 
-export function startPhonePadServer({ port = 3000, host = '0.0.0.0' } = {}) {
+function tokensMatch(expectedToken, providedToken) {
+  if (!expectedToken) {
+    return true;
+  }
+
+  const expectedBuffer = Buffer.from(expectedToken, 'utf8');
+  const providedBuffer = Buffer.from(providedToken ?? '', 'utf8');
+
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
+function getTokenFromRequest(request) {
+  const authHeader = request.headers.authorization;
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim();
+  }
+
+  const host = request.headers.host ?? 'localhost';
+  const protocol = request.headers['x-forwarded-proto'] ?? 'http';
+  const requestUrl = new URL(request.url ?? '/', `${protocol}://${host}`);
+  return requestUrl.searchParams.get('token') ?? '';
+}
+
+function isAuthorizedRequest(request, accessToken) {
+  if (!accessToken) {
+    return true;
+  }
+
+  return tokensMatch(accessToken, getTokenFromRequest(request));
+}
+
+export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken = '' } = {}) {
   const app = express();
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({ noServer: true });
   const players = new Map();
+  const requiredAccessToken = String(accessToken ?? '').trim();
   let nextPlayerId = 1;
 
   app.use(express.static(path.join(__dirname, 'public')));
 
-  app.get('/state', (_req, res) => {
+  app.get('/health', (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  app.get('/state', (req, res) => {
+    if (!isAuthorizedRequest(req, requiredAccessToken)) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+
     const allPlayers = {};
     for (const [playerId, data] of players) {
       allPlayers[playerId] = data.state;
     }
 
     res.json({ players: allPlayers });
+  });
+
+  server.on('upgrade', (request, socket, head) => {
+    const hostHeader = request.headers.host ?? 'localhost';
+    const protocol = request.headers['x-forwarded-proto'] ?? 'http';
+    const requestUrl = new URL(request.url ?? '/', `${protocol}://${hostHeader}`);
+
+    if (requestUrl.pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+
+    if (!isAuthorizedRequest(request, requiredAccessToken)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, (websocket) => {
+      wss.emit('connection', websocket, request);
+    });
+  });
+
+  wss.on('error', (error) => {
+    console.error(`WebSocket server error: ${error.message}`);
   });
 
   wss.on('connection', (socket) => {

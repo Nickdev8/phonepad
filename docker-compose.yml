@@ -1,0 +1,12 @@
+services:
+  phonepad:
+    build: .
+    container_name: phonepad
+    restart: unless-stopped
+    environment:
+      PHONEPAD_HOST: 0.0.0.0
+      PHONEPAD_PORT: 3017
+      PHONEPAD_PUBLIC_URL: ${PHONEPAD_PUBLIC_URL:-}
+      PHONEPAD_ACCESS_TOKEN: ${PHONEPAD_ACCESS_TOKEN:-}
+    ports:
+      - "3017:3017"
