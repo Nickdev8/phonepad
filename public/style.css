@@ -1,0 +1,124 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, sans-serif;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.layout {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+h1 {
+  margin: 0 0 0.5rem;
+}
+
+.status {
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+.status.connected {
+  color: #047857;
+}
+
+.status.disconnected {
+  color: #b91c1c;
+}
+
+.controller {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.dpad {
+  width: 220px;
+  height: 220px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+#btn-up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+#btn-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+#btn-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+#btn-down {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.pad-btn,
+.action-btn {
+  border: 1px solid #9ca3af;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  min-height: 3.5rem;
+  user-select: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pad-btn.active,
+.action-btn.active {
+  background: #111827;
+  color: #ffffff;
+}
+
+.actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.action-btn {
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  font-size: 1.25rem;
+}
+
+@media (max-width: 560px) {
+  .controller {
+    flex-direction: column;
+  }
+
+  .dpad {
+    width: min(70vw, 220px);
+    height: min(70vw, 220px);
+  }
+
+  .actions {
+    width: 100%;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .action-btn {
+    width: 100%;
+    aspect-ratio: 1;
+    height: auto;
+  }
+}
