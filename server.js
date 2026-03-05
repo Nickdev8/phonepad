@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,8 +66,10 @@ function isAuthorizedRequest(request, accessToken) {
 export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken = '' } = {}) {
   const app = express();
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ noServer: true });
+  const controllerWss = new WebSocketServer({ noServer: true });
+  const observerWss = new WebSocketServer({ noServer: true });
   const players = new Map();
+  const observers = new Set();
   const requiredAccessToken = String(accessToken ?? '').trim();
   let nextPlayerId = 1;
 
@@ -96,7 +98,7 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
     const protocol = request.headers['x-forwarded-proto'] ?? 'http';
     const requestUrl = new URL(request.url ?? '/', `${protocol}://${hostHeader}`);
 
-    if (requestUrl.pathname !== '/ws') {
+    if (requestUrl.pathname !== '/ws' && requestUrl.pathname !== '/observe') {
       socket.destroy();
       return;
     }
@@ -107,16 +109,38 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
       return;
     }
 
-    wss.handleUpgrade(request, socket, head, (websocket) => {
-      wss.emit('connection', websocket, request);
+    if (requestUrl.pathname === '/ws') {
+      controllerWss.handleUpgrade(request, socket, head, (websocket) => {
+        controllerWss.emit('connection', websocket, request);
+      });
+      return;
+    }
+
+    observerWss.handleUpgrade(request, socket, head, (websocket) => {
+      observerWss.emit('connection', websocket, request);
     });
   });
 
-  wss.on('error', (error) => {
+  const broadcastToObservers = (payload) => {
+    const encoded = JSON.stringify(payload);
+    for (const observer of observers) {
+      if (observer.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+
+      observer.send(encoded);
+    }
+  };
+
+  controllerWss.on('error', (error) => {
     console.error(`WebSocket server error: ${error.message}`);
   });
 
-  wss.on('connection', (socket) => {
+  observerWss.on('error', (error) => {
+    console.error(`Observer WebSocket error: ${error.message}`);
+  });
+
+  controllerWss.on('connection', (socket) => {
     const playerId = String(nextPlayerId++);
     players.set(playerId, { state: { ...EMPTY_STATE } });
     console.log(`player connected (${playerId})`);
@@ -146,11 +170,38 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
       }
 
       player.state = normalizeState(message.state);
+      broadcastToObservers({
+        type: 'input',
+        playerId,
+        state: player.state,
+        timestamp: Date.now()
+      });
     });
 
     socket.on('close', () => {
       players.delete(playerId);
       console.log(`player disconnected (${playerId})`);
+    });
+  });
+
+  observerWss.on('connection', (socket) => {
+    observers.add(socket);
+
+    const currentPlayers = {};
+    for (const [playerId, data] of players) {
+      currentPlayers[playerId] = data.state;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: 'snapshot',
+        players: currentPlayers,
+        timestamp: Date.now()
+      })
+    );
+
+    socket.on('close', () => {
+      observers.delete(socket);
     });
   });
 
@@ -166,11 +217,18 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
       resolve({
         app,
         server,
-        wss,
+        wss: controllerWss,
+        observerWss,
         players,
         stop: () =>
           new Promise((stopResolve, stopReject) => {
-            wss.close(() => {
+            let pending = 2;
+            const onWsClosed = () => {
+              pending -= 1;
+              if (pending !== 0) {
+                return;
+              }
+
               server.close((error) => {
                 if (error) {
                   stopReject(error);
@@ -179,7 +237,10 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
 
                 stopResolve();
               });
-            });
+            };
+
+            controllerWss.close(onWsClosed);
+            observerWss.close(onWsClosed);
           })
       });
     });

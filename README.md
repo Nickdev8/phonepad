@@ -40,3 +40,18 @@ Point your subdomain (or tunnel) to this container's `3017` port and keep WebSoc
 ```bash
 curl "https://phonepad.nickesselman.nl/state?token=YOUR_TOKEN"
 ```
+
+## Real-time input listener (recommended for games)
+
+Polling `/state` can miss very short taps. Use the observer WebSocket listener:
+
+```bash
+node observe-inputs.js
+```
+
+It reads `PHONEPAD_PUBLIC_URL` and `PHONEPAD_ACCESS_TOKEN` from `.env` and prints press/release events:
+
+```text
+2026-03-05T10:00:00.000Z player=1 button=A event=down
+2026-03-05T10:00:00.083Z player=1 button=A event=up
+```
