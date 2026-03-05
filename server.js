@@ -144,6 +144,11 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
     const playerId = String(nextPlayerId++);
     players.set(playerId, { state: { ...EMPTY_STATE } });
     console.log(`player connected (${playerId})`);
+    broadcastToObservers({
+      type: 'player_connected',
+      playerId,
+      timestamp: Date.now()
+    });
 
     socket.send(
       JSON.stringify({
@@ -181,6 +186,11 @@ export function startPhonePadServer({ port = 3000, host = '0.0.0.0', accessToken
     socket.on('close', () => {
       players.delete(playerId);
       console.log(`player disconnected (${playerId})`);
+      broadcastToObservers({
+        type: 'player_disconnected',
+        playerId,
+        timestamp: Date.now()
+      });
     });
   });
 

@@ -55,3 +55,34 @@ It reads `PHONEPAD_PUBLIC_URL` and `PHONEPAD_ACCESS_TOKEN` from `.env` and print
 2026-03-05T10:00:00.000Z player=1 button=A event=down
 2026-03-05T10:00:00.083Z player=1 button=A event=up
 ```
+
+## Laptop gamepad client (for browser/game detection)
+
+This creates a Linux virtual gamepad from PhonePad input so sites like `hardwaretester.com/gamepad` can see it.
+
+### 1) Install laptop dependency (Arch Linux)
+
+```bash
+sudo pacman -S python-evdev
+sudo modprobe uinput
+```
+
+If `/dev/uinput` is permission denied, run the client with sudo or grant your user access to that device.
+
+### 2) Start the client
+
+It reads `.env` by default:
+
+```bash
+npm run client
+```
+
+Or pass URL/token explicitly:
+
+```bash
+node client.js https://phonepad.nickesselman.nl YOUR_TOKEN
+```
+
+### 3) Test in browser
+
+Keep `npm run client` running on your laptop, open `https://hardwaretester.com/gamepad`, then press buttons on the phone controller page.

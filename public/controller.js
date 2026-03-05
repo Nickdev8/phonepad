@@ -12,6 +12,19 @@ const state = {
 let socket;
 const token = new URLSearchParams(window.location.search).get('token') ?? '';
 
+function sendState() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  socket.send(
+    JSON.stringify({
+      type: 'input',
+      state
+    })
+  );
+}
+
 function setConnectionStatus(isConnected) {
   statusElement.textContent = isConnected ? 'connected' : 'disconnected';
   statusElement.classList.toggle('connected', isConnected);
@@ -42,8 +55,13 @@ function connectWebSocket() {
 }
 
 function setButtonState(button, key, pressed) {
+  if (state[key] === pressed) {
+    return;
+  }
+
   state[key] = pressed;
   button.classList.toggle('active', pressed);
+  sendState();
 }
 
 function bindButton(buttonId, key) {
@@ -78,15 +96,4 @@ bindButton('btn-B', 'B');
 
 connectWebSocket();
 
-setInterval(() => {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    return;
-  }
-
-  socket.send(
-    JSON.stringify({
-      type: 'input',
-      state
-    })
-  );
-}, 1000 / 60);
+setInterval(sendState, 1000 / 60);
