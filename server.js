@@ -520,6 +520,11 @@ export function startPhonePadServer({
           if (inactivePlayer.deviceId && deviceToPlayerId.get(inactivePlayer.deviceId) === playerId) {
             deviceToPlayerId.delete(inactivePlayer.deviceId);
           }
+          broadcastToObservers({
+            type: 'player_removed',
+            playerId,
+            timestamp: Date.now()
+          });
         }, DEVICE_RETENTION_MS);
         latestPlayer.cleanupTimer.unref?.();
       }, DISCONNECT_GRACE_MS);

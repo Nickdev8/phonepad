@@ -187,6 +187,21 @@ function sanitizeJoystickMode(rawValue) {
   return 'dpad';
 }
 
+function parsePlayerReservation(rawValue) {
+  const value = String(rawValue ?? '').trim().toLowerCase();
+  if (!value || value === 'auto') {
+    return 'auto';
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 64) {
+    console.error(`Invalid player slot count: ${rawValue}`);
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
 function parseHapticsValue(rawValue) {
   const value = String(rawValue ?? 'on').trim().toLowerCase();
   return !(value === 'off' || value === 'false' || value === '0' || value === 'no');
@@ -229,6 +244,8 @@ function printLayoutExamples() {
   console.log('  phonepad --preset arcade --haptics off');
   console.log('  phonepad --joystick smooth --buttons A,B,X,Y');
   console.log('  phonepad --joystick none --buttons A,B,START,SELECT');
+  console.log('  phonepad driving --players auto');
+  console.log('  phonepad driving --players 8');
   console.log('  phonepad --inputs throttle,brake,gearUp,gearDown');
 }
 
@@ -241,17 +258,21 @@ function printUsage() {
   console.log('  --buttons <csv>                Action buttons to show');
   console.log('  --inputs <csv>                 Full custom key list');
   console.log('  --haptics <on|off>             Phone vibration feedback');
+  console.log('  --players, --max-players <n|auto>  Reserve local virtual controller slots');
   console.log('  --url <https://...>            Controller base URL override');
   console.log('  --token <secret>               Access token override');
   console.log('  -h, --help                     Print this help');
 }
 
 function printSelectedLayout(layoutSummary) {
+  const playerLabel =
+    layoutSummary.maxPlayers === 'auto' ? 'auto (adaptive pool)' : `${layoutSummary.maxPlayers} reserved slots`;
   console.log('Selected controller setup:');
   console.log(`  preset:   ${layoutSummary.preset}`);
   console.log(`  joystick: ${layoutSummary.joystickMode}`);
   console.log(`  buttons:  ${layoutSummary.buttons.length > 0 ? layoutSummary.buttons.join(',') : '(none)'}`);
   console.log(`  haptics:  ${layoutSummary.haptics ? 'on' : 'off'}`);
+  console.log(`  players:  ${playerLabel}`);
   console.log(`  inputs:   ${layoutSummary.inputKeys.join(',')}`);
 }
 
@@ -324,6 +345,7 @@ function parseArgs(rawArgs, defaults) {
   let buttonsValue = defaults.buttonsValue;
   let inputsValue = defaults.inputsValue;
   let hapticsValue = defaults.hapticsValue;
+  let maxPlayersValue = defaults.maxPlayersValue;
   let baseUrl = defaults.baseUrl;
   let accessToken = defaults.accessToken;
 
@@ -449,6 +471,28 @@ function parseArgs(rawArgs, defaults) {
       continue;
     }
 
+    if (arg === '--players' || arg === '--max-players') {
+      const next = rawArgs[index + 1];
+      if (!next) {
+        console.error(`Missing value for ${arg}`);
+        process.exit(1);
+      }
+
+      maxPlayersValue = next.trim();
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--players=')) {
+      maxPlayersValue = arg.slice('--players='.length).trim();
+      continue;
+    }
+
+    if (arg.startsWith('--max-players=')) {
+      maxPlayersValue = arg.slice('--max-players='.length).trim();
+      continue;
+    }
+
     if (arg === '--url') {
       const next = rawArgs[index + 1];
       if (!next) {
@@ -535,6 +579,7 @@ function parseArgs(rawArgs, defaults) {
     buttonsValue,
     inputsValue,
     hapticsValue,
+    maxPlayersValue,
     baseUrl,
     accessToken,
     usedJoystickOverride,
@@ -569,6 +614,13 @@ async function runPhonePadCommand(rawArgs) {
     buttonsValue: readSetting(process.env.PHONEPAD_BUTTONS, fileEnv.PHONEPAD_BUTTONS),
     inputsValue: readSetting(process.env.PHONEPAD_INPUTS, fileEnv.PHONEPAD_INPUTS),
     hapticsValue: readSetting(process.env.PHONEPAD_HAPTICS, fileEnv.PHONEPAD_HAPTICS, 'on'),
+    maxPlayersValue: readSetting(
+      process.env.PAD_MAX_PLAYERS,
+      process.env.PHONEPAD_MAX_PLAYERS,
+      fileEnv.PAD_MAX_PLAYERS,
+      fileEnv.PHONEPAD_MAX_PLAYERS,
+      'auto'
+    ),
     baseUrl: readSetting(process.env.PAD_URL, process.env.PHONEPAD_PUBLIC_URL, fileEnv.PHONEPAD_PUBLIC_URL),
     accessToken: readSetting(process.env.PAD_TOKEN, process.env.PHONEPAD_ACCESS_TOKEN, fileEnv.PHONEPAD_ACCESS_TOKEN),
     usedJoystickOverride: Boolean(readSetting(process.env.PHONEPAD_JOYSTICK, fileEnv.PHONEPAD_JOYSTICK)),
@@ -617,6 +669,7 @@ async function runPhonePadCommand(rawArgs) {
   }
 
   const layoutConfig = resolveLayoutConfig(parsed);
+  const maxPlayers = parsePlayerReservation(parsed.maxPlayersValue);
 
   let controllerUrl;
   try {
@@ -634,6 +687,7 @@ async function runPhonePadCommand(rawArgs) {
     joystickMode: layoutConfig.controllerConfig.joystickMode,
     buttons: layoutConfig.controllerConfig.buttons,
     haptics: layoutConfig.controllerConfig.haptics,
+    maxPlayers,
     inputKeys: layoutConfig.inputKeys
   });
   console.log(`Open on phone: ${controllerUrl}`);
@@ -651,7 +705,8 @@ async function runPhonePadCommand(rawArgs) {
         joystickMode: layoutConfig.controllerConfig.joystickMode,
         buttons: layoutConfig.controllerConfig.buttons,
         haptics: layoutConfig.controllerConfig.haptics
-      })
+      }),
+      PAD_MAX_PLAYERS: String(maxPlayers)
     }
   });
 

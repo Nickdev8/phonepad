@@ -193,6 +193,7 @@ function connectObserver() {
     }
 
     if (message.type === 'snapshot' && typeof message.players === 'object' && message.players !== null) {
+      writeToBridge(bridge, { type: 'sync_players', playerIds: Object.keys(message.players) });
       for (const [playerId, state] of Object.entries(message.players)) {
         writeToBridge(bridge, { type: 'state', playerId, state });
       }
@@ -206,6 +207,11 @@ function connectObserver() {
 
     if (message.type === 'player_disconnected' && typeof message.playerId === 'string') {
       writeToBridge(bridge, { type: 'reset_player', playerId: message.playerId });
+      return;
+    }
+
+    if (message.type === 'player_removed' && typeof message.playerId === 'string') {
+      writeToBridge(bridge, { type: 'remove_player', playerId: message.playerId });
     }
   });
 

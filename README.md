@@ -77,6 +77,8 @@ Custom layouts:
 ```bash
 phonepad --joystick smooth --buttons A,B,X,Y
 phonepad --joystick none --buttons A,B,START,SELECT
+phonepad driving --players auto
+phonepad driving --players 8
 phonepad --inputs throttle,brake,gearUp,gearDown
 phonepad --preset driving --haptics off
 ```
@@ -142,6 +144,8 @@ phonepad
 
 `npm run client` also runs the same command.
 The command prints a QR code and keeps running until `Ctrl+C`.
+By default it uses an adaptive controller pool: it starts small, keeps a warm spare for the next join, and grows only when more players show up.
+If you already know how many players you need before launching the game, `phonepad --players 4` or `PHONEPAD_MAX_PLAYERS=12` is still the most stable option because it avoids later hotplug growth.
 
 Or pass URL/token explicitly:
 
