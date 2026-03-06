@@ -36,10 +36,10 @@ Point your subdomain (or tunnel) to this container's `3017` port and keep WebSoc
 ## Fullscreen on phone
 
 The page now supports both portrait and landscape with no scrolling.
-For true browser-chrome-free fullscreen on mobile, open from home screen (PWA standalone) or tap the `Fullscreen` button.
+Tap the `Fullscreen` button when the current browser exposes the Fullscreen API.
 When a token is present in the URL once, the controller caches it locally so standalone launches keep working.
-On iPhone and iPad, the best fullscreen mode is still the Home Screen web app path (`Share` -> `Add to Home Screen`).
-PhonePad now shows an in-page note for that case and uses iOS-safe viewport sizing so Safari toolbar changes do not squeeze the controls.
+On iPhone and iPad Safari, arbitrary page fullscreen is not available in a normal browser tab, so PhonePad hides the button there and shows a note instead.
+PhonePad uses iOS-safe viewport sizing so Safari toolbar changes do not squeeze the controls.
 Safari does not currently expose the web vibration API here, so iOS falls back to visual press feedback when haptics are enabled.
 
 ## Layout setup command

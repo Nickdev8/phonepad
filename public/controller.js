@@ -270,7 +270,7 @@ function updateDeviceNote() {
 
   const notes = [];
   if (isAppleMobile && !standaloneMode) {
-    notes.push('iPhone/iPad fullscreen works best from Home Screen. Use Share, then Add to Home Screen.');
+    notes.push('iPhone/iPad Safari does not support page fullscreen in the browser tab.');
   }
 
   if (controllerConfig.haptics && !supportsNativeHaptics()) {
@@ -343,12 +343,6 @@ function updateFullscreenButton() {
   if (canRequestFullscreen()) {
     fullscreenButton.hidden = Boolean(getFullscreenElement());
     fullscreenButton.textContent = 'Fullscreen';
-    return;
-  }
-
-  if (isAppleMobile) {
-    fullscreenButton.hidden = false;
-    fullscreenButton.textContent = 'Add to Home Screen';
     return;
   }
 
