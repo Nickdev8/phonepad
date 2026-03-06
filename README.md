@@ -33,14 +33,11 @@ The URL includes `?token=...`. Keep that link private.
 
 Point your subdomain (or tunnel) to this container's `3017` port and keep WebSocket upgrade support enabled.
 
-## Fullscreen on phone
+## Phone UI
 
-The page now supports both portrait and landscape with no scrolling.
-Tap the `Fullscreen` button when the current browser exposes the Fullscreen API.
-When a token is present in the URL once, the controller caches it locally so standalone launches keep working.
-On iPhone and iPad Safari, arbitrary page fullscreen is not available in a normal browser tab, so PhonePad hides the button there and shows a note instead.
-PhonePad uses iOS-safe viewport sizing so Safari toolbar changes do not squeeze the controls.
-Safari does not currently expose the web vibration API here, so iOS falls back to visual press feedback when haptics are enabled.
+The page supports both portrait and landscape with no scrolling, and caches the token locally after the first valid launch so refreshes keep working.
+In landscape, the header collapses away so the controls take the screen unless reconnect is needed.
+Safari does not expose the web vibration API here. On supported Apple versions, PhonePad uses Safari's native HTML `switch` haptic path; older versions still fall back to visual press feedback.
 
 ## Layout setup command
 

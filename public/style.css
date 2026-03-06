@@ -71,6 +71,25 @@ body[data-feedback='strong']::after {
   opacity: 0.34;
 }
 
+.haptic-switch-proxy {
+  position: fixed;
+  left: -6rem;
+  top: -6rem;
+  width: 3.25rem;
+  height: 2rem;
+  opacity: 0.001;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.haptic-switch-proxy-input,
+.haptic-switch-proxy-label {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
 .app {
   width: 100vw;
   min-height: 100svh;
@@ -84,6 +103,11 @@ body[data-feedback='strong']::after {
   padding-right: max(0.7rem, env(safe-area-inset-right));
   padding-bottom: max(0.9rem, calc(env(safe-area-inset-bottom) + 0.35rem));
   padding-left: max(0.7rem, env(safe-area-inset-left));
+}
+
+.app.landscape-compact {
+  position: relative;
+  gap: 0.45rem;
 }
 
 .top {
@@ -349,6 +373,27 @@ h1 {
 }
 
 @media (orientation: landscape) {
+  .app.landscape-compact .top {
+    position: absolute;
+    top: max(0.55rem, env(safe-area-inset-top));
+    right: max(0.55rem, env(safe-area-inset-right));
+    left: max(0.55rem, env(safe-area-inset-left));
+    z-index: 5;
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: none;
+  }
+
+  .app.landscape-compact .top > :not(.top-actions) {
+    display: none;
+  }
+
+  .app.landscape-compact .top-actions {
+    margin-left: auto;
+    pointer-events: auto;
+    justify-content: flex-end;
+  }
+
   .controller {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -385,6 +430,12 @@ h1 {
 }
 
 @media (orientation: landscape) {
+  .app.ios-browser.landscape-compact .top {
+    top: max(0.45rem, env(safe-area-inset-top));
+    right: max(0.45rem, env(safe-area-inset-right));
+    left: max(0.45rem, env(safe-area-inset-left));
+  }
+
   .app.ios-browser .dpad,
   .app.ios-browser .smooth-stick {
     width: min(56vh, 320px);
