@@ -10,7 +10,6 @@ from evdev import AbsInfo, UInput, ecodes
 
 AXIS_MAX = 32767
 AXIS_DEADZONE = 0.02
-MIN_ADAPTIVE_SLOTS = 2
 DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})
 AXIS_KEYS = frozenset({"axisx", "axisy", "lx", "ly"})
 ACTION_BUTTON_CODES = (
@@ -403,11 +402,7 @@ def parse_reserved_slots():
 
 
 def next_auto_reservation_target(active_player_count):
-    target = MIN_ADAPTIVE_SLOTS
-    while target < active_player_count:
-        target *= 2
-
-    return target
+    return max(1, active_player_count)
 
 
 def ensure_pad(slot_id):

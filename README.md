@@ -144,7 +144,7 @@ phonepad
 
 `npm run client` also runs the same command.
 The command prints a QR code and keeps running until `Ctrl+C`.
-By default it uses an adaptive controller pool: it starts small, keeps a warm spare for the next join, and grows only when more players show up.
+By default it uses an adaptive controller pool: it starts with the first active player and creates additional virtual controllers only when more players actually join.
 If you already know how many players you need before launching the game, `phonepad --players 4` or `PHONEPAD_MAX_PLAYERS=12` is still the most stable option because it avoids later hotplug growth.
 
 Or pass URL/token explicitly:
