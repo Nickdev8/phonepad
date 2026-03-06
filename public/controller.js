@@ -1,7 +1,9 @@
 const statusElement = document.getElementById('status');
 const layoutInfoElement = document.getElementById('layout-info');
+const deviceNoteElement = document.getElementById('device-note');
 const reconnectButton = document.getElementById('reconnect-now');
 const fullscreenButton = document.getElementById('fullscreen-now');
+const appElement = document.querySelector('.app');
 const dpadElement = document.getElementById('dpad');
 const actionsElement = document.getElementById('actions');
 const extrasElement = document.getElementById('extras');
@@ -16,6 +18,7 @@ const RETRY_JITTER_MS = 150;
 const RETRY_CHECK_AUTH_AFTER = 3;
 const MAX_BUFFERED_BYTES = 128 * 1024;
 const HAPTIC_MIN_INTERVAL_MS = 25;
+const FEEDBACK_FLASH_MS = 90;
 const DIRECTION_THRESHOLD = 0.35;
 const STICK_DEADZONE = 0.08;
 const STICK_RESPONSE_EXPONENT = 1.4;
@@ -39,6 +42,8 @@ const DPAD_LABELS = Object.freeze({
 const urlParams = new URLSearchParams(window.location.search);
 const token = resolveAccessToken(urlParams);
 const deviceId = getOrCreateDeviceId();
+const isAppleMobile = detectAppleMobile();
+const nativeVibrationSupported = typeof navigator.vibrate === 'function';
 
 let inputKeys = [...DEFAULT_INPUTS];
 let state = createState(inputKeys);
@@ -59,7 +64,9 @@ let retryAttempts = 0;
 let attemptedAutoFullscreen = false;
 let hapticsEnabled = true;
 let lastHapticAt = 0;
+let feedbackFlashTimer = 0;
 let smoothCleanup = null;
+let standaloneMode = detectStandaloneMode();
 
 function createDeviceId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
@@ -97,6 +104,26 @@ function resolveAccessToken(searchParams) {
   } catch {
     return fromQuery;
   }
+}
+
+function detectAppleMobile() {
+  const userAgent = navigator.userAgent ?? '';
+  const platform = navigator.platform ?? '';
+  return /iPad|iPhone|iPod/u.test(userAgent) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function detectStandaloneMode() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function supportsNativeHaptics() {
+  return nativeVibrationSupported;
+}
+
+function syncRuntimeEnvironment() {
+  standaloneMode = detectStandaloneMode();
+  appElement.classList.toggle('ios-browser', isAppleMobile && !standaloneMode);
+  appElement.classList.toggle('ios-standalone', isAppleMobile && standaloneMode);
 }
 
 function sanitizeInputKeys(rawKeys) {
@@ -220,46 +247,124 @@ function setLayoutInfo() {
       ? 'smooth stick'
       : controllerConfig.joystickMode === 'none'
         ? 'no stick'
-        : 'd-pad';
+      : 'd-pad';
 
   const buttonCount = inputKeys.filter((key) => !isDpadKey(key)).length;
   const buttonText = `${buttonCount} button${buttonCount === 1 ? '' : 's'}`;
-  layoutInfoElement.textContent = `${controllerConfig.preset} | ${joystickLabel} | ${buttonText} | haptics ${
-    controllerConfig.haptics ? 'on' : 'off'
-  }`;
+  const hapticLabel = !controllerConfig.haptics ? 'off' : supportsNativeHaptics() ? 'on' : 'visual only';
+  layoutInfoElement.textContent = `${controllerConfig.preset} | ${joystickLabel} | ${buttonText} | haptics ${hapticLabel}`;
+}
+
+function setDeviceNote(text) {
+  if (!deviceNoteElement) {
+    return;
+  }
+
+  const normalized = String(text ?? '').trim();
+  deviceNoteElement.hidden = normalized.length === 0;
+  deviceNoteElement.textContent = normalized;
+}
+
+function updateDeviceNote() {
+  syncRuntimeEnvironment();
+
+  const notes = [];
+  if (isAppleMobile && !standaloneMode) {
+    notes.push('iPhone/iPad fullscreen works best from Home Screen. Use Share, then Add to Home Screen.');
+  }
+
+  if (controllerConfig.haptics && !supportsNativeHaptics()) {
+    if (isAppleMobile) {
+      notes.push('Safari does not expose web vibration here, so haptics fall back to visual feedback.');
+    } else {
+      notes.push('This browser does not expose vibration, so haptics fall back to visual feedback.');
+    }
+  }
+
+  setDeviceNote(notes.join(' '));
 }
 
 function setReconnectVisible(visible) {
   reconnectButton.hidden = !visible;
 }
 
+function getFullscreenElement() {
+  return document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
+}
+
+function getFullscreenRequester() {
+  const element = document.documentElement;
+  if (typeof element.requestFullscreen === 'function') {
+    return async () => element.requestFullscreen({ navigationUI: 'hide' });
+  }
+
+  if (typeof element.webkitRequestFullscreen === 'function') {
+    return async () => element.webkitRequestFullscreen();
+  }
+
+  return null;
+}
+
 function canRequestFullscreen() {
-  return typeof document.documentElement.requestFullscreen === 'function';
+  return Boolean(getFullscreenRequester());
 }
 
 async function enterFullscreen() {
-  if (!canRequestFullscreen() || document.fullscreenElement) {
+  syncRuntimeEnvironment();
+  if (standaloneMode || getFullscreenElement()) {
+    return;
+  }
+
+  const requestFullscreen = getFullscreenRequester();
+  if (!requestFullscreen) {
+    if (isAppleMobile) {
+      updateDeviceNote();
+    }
     return;
   }
 
   try {
-    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    await requestFullscreen();
   } catch {
-    // ignored: browser can reject without a direct user gesture
+    if (isAppleMobile) {
+      updateDeviceNote();
+    }
   }
 }
 
 function updateFullscreenButton() {
-  if (!canRequestFullscreen()) {
+  syncRuntimeEnvironment();
+
+  if (standaloneMode) {
     fullscreenButton.hidden = true;
     return;
   }
 
-  fullscreenButton.hidden = Boolean(document.fullscreenElement);
+  if (canRequestFullscreen()) {
+    fullscreenButton.hidden = Boolean(getFullscreenElement());
+    fullscreenButton.textContent = 'Fullscreen';
+    return;
+  }
+
+  if (isAppleMobile) {
+    fullscreenButton.hidden = false;
+    fullscreenButton.textContent = 'Add to Home Screen';
+    return;
+  }
+
+  fullscreenButton.hidden = true;
+}
+
+function flashFeedback(intensity = 'light') {
+  document.body.dataset.feedback = intensity;
+  clearTimeout(feedbackFlashTimer);
+  feedbackFlashTimer = setTimeout(() => {
+    delete document.body.dataset.feedback;
+  }, FEEDBACK_FLASH_MS);
 }
 
 function triggerHaptic(intensity = 'light') {
-  if (!hapticsEnabled || typeof navigator.vibrate !== 'function') {
+  if (!hapticsEnabled) {
     return;
   }
 
@@ -269,7 +374,18 @@ function triggerHaptic(intensity = 'light') {
   }
 
   lastHapticAt = now;
-  navigator.vibrate(intensity === 'strong' ? 15 : 8);
+
+  if (supportsNativeHaptics()) {
+    navigator.vibrate(intensity === 'strong' ? 15 : 8);
+    return;
+  }
+
+  flashFeedback(intensity);
+}
+
+function syncViewportMetrics() {
+  const viewportHeight = Math.round(window.visualViewport?.height ?? window.innerHeight);
+  document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
 }
 
 function clearRetryTimers() {
@@ -876,6 +992,7 @@ async function initController() {
 
   renderControls();
   setLayoutInfo();
+  updateDeviceNote();
 
   controlsReady = true;
   retryAttempts = 0;
@@ -918,6 +1035,30 @@ window.addEventListener('online', () => {
 document.addEventListener('fullscreenchange', () => {
   updateFullscreenButton();
 });
+document.addEventListener('webkitfullscreenchange', () => {
+  updateFullscreenButton();
+});
+
+window.addEventListener('resize', () => {
+  syncViewportMetrics();
+  updateFullscreenButton();
+});
+window.addEventListener('orientationchange', () => {
+  syncViewportMetrics();
+  updateFullscreenButton();
+});
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewportMetrics);
+  window.visualViewport.addEventListener('scroll', syncViewportMetrics);
+}
+
+const standaloneQuery = window.matchMedia?.('(display-mode: standalone)');
+standaloneQuery?.addEventListener?.('change', () => {
+  updateFullscreenButton();
+  updateDeviceNote();
+  syncViewportMetrics();
+});
 
 document.addEventListener(
   'pointerdown',
@@ -933,6 +1074,9 @@ document.addEventListener(
 );
 
 setInterval(sendState, KEEPALIVE_INTERVAL_MS);
+syncRuntimeEnvironment();
+syncViewportMetrics();
 updateFullscreenButton();
 setLayoutInfo();
+updateDeviceNote();
 initController();

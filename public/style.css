@@ -18,13 +18,26 @@
   box-sizing: border-box;
 }
 
-html,
+html {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: linear-gradient(155deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   position: fixed;
   inset: 0;
   margin: 0;
   width: 100%;
   height: 100%;
+  min-height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -34,19 +47,42 @@ body {
   color: var(--text);
   background: linear-gradient(155deg, var(--bg-start) 0%, var(--bg-end) 100%);
   touch-action: none;
+  -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at center, rgba(158, 182, 217, 0.18) 0%, rgba(158, 182, 217, 0.04) 32%, transparent 68%);
+  transition: opacity 90ms ease;
+}
+
+body[data-feedback='light']::after {
+  opacity: 0.22;
+}
+
+body[data-feedback='strong']::after {
+  opacity: 0.34;
+}
+
 .app {
   width: 100vw;
-  height: 100dvh;
+  min-height: 100svh;
+  min-height: -webkit-fill-available;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 0.75rem;
   padding-top: max(0.7rem, env(safe-area-inset-top));
   padding-right: max(0.7rem, env(safe-area-inset-right));
-  padding-bottom: max(0.7rem, env(safe-area-inset-bottom));
+  padding-bottom: max(0.9rem, calc(env(safe-area-inset-bottom) + 0.35rem));
   padding-left: max(0.7rem, env(safe-area-inset-left));
 }
 
@@ -72,6 +108,13 @@ h1 {
 .layout-info {
   color: var(--text-soft);
   letter-spacing: 0.01em;
+}
+
+.device-note {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: clamp(0.78rem, 1.75vh, 0.92rem);
+  line-height: 1.35;
 }
 
 .status.connected {
@@ -105,8 +148,10 @@ h1 {
   font-size: 0.84rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+  min-height: 2.75rem;
   padding: 0.4rem 0.72rem;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .controller {
@@ -167,11 +212,16 @@ h1 {
   text-transform: none;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 90ms ease,
+    background-color 90ms ease,
+    border-color 90ms ease;
 }
 
 .control-btn.active {
   background: var(--panel-active);
   border-color: var(--stroke-strong);
+  transform: translateY(1px) scale(0.985);
 }
 
 .dpad-btn[data-slot='up'] {
@@ -215,6 +265,10 @@ h1 {
   border-color: var(--stroke-strong);
 }
 
+.smooth-stick[data-active='1'] .smooth-knob {
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
 .smooth-axis {
   position: absolute;
   background: rgba(158, 182, 217, 0.35);
@@ -253,6 +307,7 @@ h1 {
   border: 2px solid var(--stroke-strong);
   background: var(--panel-active);
   transform: translate(-50%, -50%);
+  transition: transform 90ms ease;
 }
 
 .smooth-stick.active-up {
@@ -306,5 +361,37 @@ h1 {
 
   .actions {
     width: min(100%, 380px);
+  }
+}
+
+.app.ios-browser {
+  gap: 0.65rem;
+}
+
+.app.ios-browser .top {
+  gap: 0.35rem;
+}
+
+.app.ios-browser .controller {
+  gap: 0.65rem;
+}
+
+@media (orientation: portrait) {
+  .app.ios-browser .dpad,
+  .app.ios-browser .smooth-stick {
+    width: min(58vw, 300px);
+    height: min(58vw, 300px);
+  }
+}
+
+@media (orientation: landscape) {
+  .app.ios-browser .dpad,
+  .app.ios-browser .smooth-stick {
+    width: min(56vh, 320px);
+    height: min(56vh, 320px);
+  }
+
+  .app.ios-browser .actions {
+    width: min(100%, 340px);
   }
 }
