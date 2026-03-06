@@ -347,7 +347,7 @@ export function startPhonePadServer({
         try {
           client.ping();
         } catch {
-          // Let socket lifecycle events handle cleanup naturally.
+          // Ping failures are transient here; socket lifecycle events perform cleanup.
         }
       }
     };

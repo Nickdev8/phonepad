@@ -777,11 +777,10 @@ function createSmoothStick() {
     (event) => {
       event.preventDefault();
       activePointerId = event.pointerId;
+      // Pointer capture is opportunistic: some mobile browsers reject it mid-gesture.
       try {
         container.setPointerCapture(event.pointerId);
-      } catch {
-        // Some browsers reject pointer capture on edge cases.
-      }
+      } catch {}
       applyPointer(event);
       triggerHaptic('strong');
     },
