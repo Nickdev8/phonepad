@@ -44,6 +44,17 @@ const DPAD_LABELS = Object.freeze({
   left: '←',
   right: '→'
 });
+const PRESET_ACTION_METADATA = Object.freeze({
+  'ultimate-chicken-horse': Object.freeze({
+    labels: Object.freeze({
+      A: 'Jump',
+      B: 'Back',
+      X: 'Sprint',
+      Y: 'Dance'
+    }),
+    actionsClassName: 'preset-ultimate-chicken-horse'
+  })
+});
 
 const urlParams = new URLSearchParams(window.location.search);
 const token = resolveAccessToken(urlParams);
@@ -505,6 +516,19 @@ function getControlLabel(key) {
   }
 
   return key.length <= 4 ? key.toUpperCase() : key;
+}
+
+function getPresetActionMetadata() {
+  return PRESET_ACTION_METADATA[controllerConfig.preset] ?? null;
+}
+
+function getActionLabel(key) {
+  const metadata = getPresetActionMetadata();
+  if (!metadata) {
+    return '';
+  }
+
+  return metadata.labels[key] ?? '';
 }
 
 function setStatus(text, type) {
@@ -1069,13 +1093,32 @@ function createControlButton(key, dpadSlot = '') {
   button.type = 'button';
   button.className = 'control-btn';
   button.dataset.key = key;
-  button.textContent = getControlLabel(key);
 
   if (dpadSlot) {
     button.classList.add('dpad-btn');
     button.dataset.slot = dpadSlot;
+    button.textContent = getControlLabel(key);
   } else {
     button.classList.add('action-btn');
+    const actionLabel = getActionLabel(key);
+    if (actionLabel) {
+      button.classList.add('action-btn-labeled');
+      button.setAttribute('aria-label', `${getControlLabel(key)} ${actionLabel}`);
+      button.setAttribute('title', `${getControlLabel(key)} ${actionLabel}`);
+
+      const keyLabel = document.createElement('span');
+      keyLabel.className = 'action-btn-key';
+      keyLabel.textContent = getControlLabel(key);
+
+      const nameLabel = document.createElement('span');
+      nameLabel.className = 'action-btn-name';
+      nameLabel.textContent = actionLabel;
+
+      button.appendChild(keyLabel);
+      button.appendChild(nameLabel);
+    } else {
+      button.textContent = getControlLabel(key);
+    }
   }
 
   bindButton(button, key);
@@ -1273,6 +1316,7 @@ function createSmoothStick() {
 function renderControls() {
   clearSmoothStick();
   dpadElement.classList.remove('smooth-host');
+  actionsElement.className = 'actions';
 
   dpadElement.innerHTML = '';
   actionsElement.innerHTML = '';
@@ -1300,6 +1344,10 @@ function renderControls() {
   const requestedButtons = sanitizeButtons(controllerConfig.buttons, inputKeys);
   const defaultButtons = inputKeys.filter((key) => !isDpadKey(key));
   const primaryButtons = (requestedButtons.length > 0 ? requestedButtons : defaultButtons).slice(0, 8);
+  const presetActionMetadata = getPresetActionMetadata();
+  if (presetActionMetadata?.actionsClassName) {
+    actionsElement.classList.add(presetActionMetadata.actionsClassName);
+  }
 
   const extras = [];
   const primarySet = new Set(primaryButtons);

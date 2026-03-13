@@ -387,6 +387,29 @@ body[data-feedback='strong']::after {
   letter-spacing: 0.04em;
 }
 
+.action-btn-labeled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.6rem 0.45rem;
+  letter-spacing: 0;
+}
+
+.action-btn-key {
+  font-size: clamp(0.82rem, 1.55vh, 0.95rem);
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  opacity: 0.82;
+}
+
+.action-btn-name {
+  font-size: clamp(1.02rem, 2.4vh, 1.45rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
 .action-btn[data-key='A'] {
   --btn-surface: #2f5b4a;
   --btn-surface-active: #3b705c;
@@ -505,6 +528,35 @@ body[data-feedback='strong']::after {
     grid-template-columns: minmax(0, var(--dpad-size)) minmax(0, var(--actions-width));
   }
 
+  .actions.preset-ultimate-chicken-horse {
+    grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr);
+    grid-template-areas:
+      'A B'
+      'X Y';
+    width: min(100%, max(var(--actions-width), calc(var(--action-size) * 2.05 + var(--control-gap))));
+    align-self: stretch;
+  }
+
+  .actions.preset-ultimate-chicken-horse .action-btn {
+    width: 100%;
+  }
+
+  .actions.preset-ultimate-chicken-horse .action-btn[data-key='A'] {
+    grid-area: A;
+  }
+
+  .actions.preset-ultimate-chicken-horse .action-btn[data-key='X'] {
+    grid-area: X;
+  }
+
+  .actions.preset-ultimate-chicken-horse .action-btn[data-key='B'] {
+    grid-area: B;
+  }
+
+  .actions.preset-ultimate-chicken-horse .action-btn[data-key='Y'] {
+    grid-area: Y;
+  }
+
   .app.landscape-compact .top {
     position: absolute;
     top: max(0.55rem, env(safe-area-inset-top));
@@ -576,5 +628,14 @@ body[data-feedback='strong']::after {
 
   .connection-badges {
     min-height: 1.65rem;
+  }
+
+  .action-btn-labeled {
+    gap: 0.18rem;
+    padding: 0.45rem 0.3rem;
+  }
+
+  .action-btn-name {
+    font-size: clamp(0.9rem, 2.1vh, 1.15rem);
   }
 }
