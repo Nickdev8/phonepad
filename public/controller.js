@@ -52,6 +52,13 @@ const PRESET_ACTION_METADATA = Object.freeze({
       X: 'Sprint',
       Y: 'Dance'
     }),
+    toggles: Object.freeze([
+      Object.freeze({
+        key: 'X',
+        label: 'Sprint Lock',
+        description: 'Hold Sprint'
+      })
+    ]),
     actionsClassName: 'preset-ultimate-chicken-horse'
   })
 });
@@ -68,6 +75,8 @@ const appleSwitchHapticsSupported = detectAppleSwitchHapticsSupport();
 
 let inputKeys = [...DEFAULT_INPUTS];
 let state = createState(inputKeys);
+let manualButtonState = createState(inputKeys);
+let lockedButtonState = createState(inputKeys);
 let controllerConfig = {
   preset: DEFAULT_CONTROLLER_CONFIG.preset,
   joystickMode: DEFAULT_CONTROLLER_CONFIG.joystickMode,
@@ -94,6 +103,8 @@ let fullscreenRequestInFlight = false;
 let deviceNoteText = '';
 let laptopObserverCount = 0;
 let tabOwnsController = false;
+let actionButtonsByKey = new Map();
+let lockButtonsByKey = new Map();
 
 function createDeviceId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
@@ -520,6 +531,10 @@ function getControlLabel(key) {
 
 function getPresetActionMetadata() {
   return PRESET_ACTION_METADATA[controllerConfig.preset] ?? null;
+}
+
+function getPresetActionToggles() {
+  return Array.isArray(getPresetActionMetadata()?.toggles) ? getPresetActionMetadata().toggles : [];
 }
 
 function getActionLabel(key) {
@@ -972,15 +987,55 @@ function sendState() {
   );
 }
 
-function setButtonState(button, key, pressed) {
-  if (state[key] === pressed) {
+function registerButtonForKey(map, key, button) {
+  const existing = map.get(key) ?? [];
+  existing.push(button);
+  map.set(key, existing);
+}
+
+function syncButtonVisuals(key) {
+  const actionButtons = actionButtonsByKey.get(key) ?? [];
+  for (const button of actionButtons) {
+    button.classList.toggle('active', Boolean(state[key]));
+  }
+
+  const lockButtons = lockButtonsByKey.get(key) ?? [];
+  for (const button of lockButtons) {
+    button.classList.toggle('active', Boolean(lockedButtonState[key]));
+    button.setAttribute('aria-pressed', lockedButtonState[key] ? 'true' : 'false');
+  }
+}
+
+function applyEffectiveButtonState(key) {
+  const nextPressed = Boolean(manualButtonState[key] || lockedButtonState[key]);
+  if (state[key] === nextPressed) {
+    syncButtonVisuals(key);
     return false;
   }
 
-  state[key] = pressed;
-  button.classList.toggle('active', pressed);
+  state[key] = nextPressed;
+  syncButtonVisuals(key);
   sendState();
   return true;
+}
+
+function setButtonState(key, pressed) {
+  if (!Object.hasOwn(manualButtonState, key)) {
+    manualButtonState[key] = false;
+  }
+
+  manualButtonState[key] = pressed;
+  return applyEffectiveButtonState(key);
+}
+
+function toggleLockedButton(key) {
+  if (!Object.hasOwn(lockedButtonState, key)) {
+    lockedButtonState[key] = false;
+  }
+
+  lockedButtonState[key] = !lockedButtonState[key];
+  applyEffectiveButtonState(key);
+  triggerHaptic('light');
 }
 
 function roundAxisValue(value) {
@@ -1067,14 +1122,14 @@ function bindButton(button, key) {
       button.setPointerCapture(event.pointerId);
     }
 
-    if (setButtonState(button, key, true)) {
+    if (setButtonState(key, true)) {
       triggerHaptic('light');
     }
   };
 
   const release = (event) => {
     event.preventDefault();
-    setButtonState(button, key, false);
+    setButtonState(key, false);
   };
 
   button.addEventListener('pointerdown', press);
@@ -1121,7 +1176,37 @@ function createControlButton(key, dpadSlot = '') {
     }
   }
 
+  registerButtonForKey(actionButtonsByKey, key, button);
+  syncButtonVisuals(key);
   bindButton(button, key);
+  return button;
+}
+
+function createToggleButton(toggle) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'control-btn toggle-btn';
+  button.dataset.key = toggle.key;
+
+  const title = document.createElement('span');
+  title.className = 'toggle-btn-title';
+  title.textContent = toggle.label;
+
+  const description = document.createElement('span');
+  description.className = 'toggle-btn-description';
+  description.textContent = toggle.description;
+
+  button.append(title, description);
+  button.setAttribute('aria-label', toggle.label);
+  registerButtonForKey(lockButtonsByKey, toggle.key, button);
+  syncButtonVisuals(toggle.key);
+
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    toggleLockedButton(toggle.key);
+  });
+  button.addEventListener('contextmenu', (event) => event.preventDefault());
+
   return button;
 }
 
@@ -1317,6 +1402,8 @@ function renderControls() {
   clearSmoothStick();
   dpadElement.classList.remove('smooth-host');
   actionsElement.className = 'actions';
+  actionButtonsByKey = new Map();
+  lockButtonsByKey = new Map();
 
   dpadElement.innerHTML = '';
   actionsElement.innerHTML = '';
@@ -1368,7 +1455,15 @@ function renderControls() {
     extrasElement.appendChild(createControlButton(key));
   }
 
-  extrasElement.hidden = extras.length === 0;
+  for (const toggle of getPresetActionToggles()) {
+    if (!inputKeys.includes(toggle.key) || isDpadKey(toggle.key)) {
+      continue;
+    }
+
+    extrasElement.appendChild(createToggleButton(toggle));
+  }
+
+  extrasElement.hidden = extrasElement.children.length === 0;
   dpadElement.hidden = dpadElement.children.length === 0;
   actionsElement.hidden = actionsElement.children.length === 0;
 }
@@ -1493,6 +1588,8 @@ async function initController() {
 
   inputKeys = config.inputs;
   state = createState(inputKeys);
+  manualButtonState = createState(inputKeys);
+  lockedButtonState = createState(inputKeys);
   directionKeys = resolveDirectionKeys(inputKeys);
   controllerConfig = config.config;
   hapticsEnabled = controllerConfig.haptics;

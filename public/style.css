@@ -438,6 +438,41 @@ body[data-feedback='strong']::after {
   --btn-border-active: #eadfbf;
 }
 
+.toggle-btn {
+  --btn-surface: #2a2536;
+  --btn-surface-active: #3a324b;
+  --btn-border: #8f84af;
+  --btn-border-active: #ece6ff;
+  min-height: 4.4rem;
+  border-radius: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.28rem;
+  padding: 0.8rem 0.95rem;
+  text-align: left;
+}
+
+.toggle-btn-title {
+  font-size: clamp(0.98rem, 2vh, 1.08rem);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.toggle-btn-description {
+  font-size: clamp(0.72rem, 1.55vh, 0.82rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.toggle-btn.active .toggle-btn-description {
+  color: #efe9ff;
+}
+
 .smooth-stick {
   position: relative;
   width: min(100%, var(--dpad-size));
