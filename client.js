@@ -9,6 +9,9 @@ import WebSocket from 'ws';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dotenvPath = path.join(__dirname, '.env');
+const DEBUG_ENABLED = parseDebugFlag(
+  process.env.PAD_DEBUG || process.env.PHONEPAD_DEBUG || ''
+);
 
 function loadDotEnv(filePath) {
   const loaded = {};
@@ -43,6 +46,15 @@ function loadDotEnv(filePath) {
   return loaded;
 }
 
+function parseDebugFlag(rawValue) {
+  const value = String(rawValue ?? '').trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+
+  return !(value === '0' || value === 'off' || value === 'false' || value === 'no');
+}
+
 function buildObserveUrl(baseUrl, token) {
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -64,11 +76,73 @@ function buildLayoutUrl(baseUrl) {
 }
 
 function writeToBridge(bridgeProcess, message) {
+  debugBridgeMessage(message);
   if (bridgeProcess.killed || !bridgeProcess.stdin.writable) {
     return;
   }
 
   bridgeProcess.stdin.write(`${JSON.stringify(message)}\n`);
+}
+
+function debugLog(message) {
+  if (!DEBUG_ENABLED) {
+    return;
+  }
+
+  console.error(`[debug] ${message}`);
+}
+
+const lastDebugStateSummaryByPlayer = new Map();
+
+function summarizeState(state) {
+  if (!state || typeof state !== 'object') {
+    return 'invalid';
+  }
+
+  const activeInputs = [];
+  for (const [key, value] of Object.entries(state)) {
+    if (typeof value === 'number') {
+      if (value !== 0) {
+        activeInputs.push(`${key}=${value}`);
+      }
+      continue;
+    }
+
+    if (value) {
+      activeInputs.push(key);
+    }
+  }
+
+  return activeInputs.length > 0 ? activeInputs.join(',') : 'idle';
+}
+
+function debugBridgeMessage(message) {
+  if (!DEBUG_ENABLED || !message || typeof message !== 'object') {
+    return;
+  }
+
+  if (message.type === 'state') {
+    const playerId = typeof message.playerId === 'string' ? message.playerId : 'unknown';
+    const nextSummary = summarizeState(message.state);
+    const previousSummary = lastDebugStateSummaryByPlayer.get(playerId);
+    if (previousSummary === nextSummary) {
+      return;
+    }
+
+    lastDebugStateSummaryByPlayer.set(playerId, nextSummary);
+    debugLog(`bridge state player=${playerId} ${nextSummary}`);
+    return;
+  }
+
+  if (message.type === 'sync_players' && Array.isArray(message.playerIds)) {
+    debugLog(`bridge sync players=${message.playerIds.join(',') || '(none)'}`);
+    return;
+  }
+
+  if ((message.type === 'reset_player' || message.type === 'remove_player') && typeof message.playerId === 'string') {
+    debugLog(`bridge ${message.type} player=${message.playerId}`);
+    lastDebugStateSummaryByPlayer.delete(message.playerId);
+  }
 }
 
 const fileEnv = loadDotEnv(dotenvPath);
@@ -110,6 +184,7 @@ try {
 const bridge = spawn('python3', [path.join(__dirname, 'virtual-gamepad.py')], {
   stdio: ['pipe', 'inherit', 'inherit']
 });
+debugLog(`spawned virtual bridge pid=${bridge.pid ?? 'unknown'}`);
 
 bridge.on('exit', (code, signal) => {
   if (shuttingDown) {
@@ -172,15 +247,18 @@ async function publishLayout() {
     }
 
     console.error(`layout sync failed: ${error.message}`);
+    debugLog(`layout publish failed against ${layoutUrl}: ${error.message}`);
   }
 }
 
 function connectObserver() {
   clearReconnectTimer();
+  debugLog(`connecting observer ${observeUrl}`);
   socket = new WebSocket(observeUrl);
 
   socket.on('open', () => {
     console.log(`client connected to ${observeUrl}`);
+    debugLog('observer websocket open');
     publishLayout();
   });
 
@@ -193,6 +271,7 @@ function connectObserver() {
     }
 
     if (message.type === 'snapshot' && typeof message.players === 'object' && message.players !== null) {
+      debugLog(`observer snapshot players=${Object.keys(message.players).join(',') || '(none)'}`);
       writeToBridge(bridge, { type: 'sync_players', playerIds: Object.keys(message.players) });
       for (const [playerId, state] of Object.entries(message.players)) {
         writeToBridge(bridge, { type: 'state', playerId, state });
@@ -206,11 +285,13 @@ function connectObserver() {
     }
 
     if (message.type === 'player_disconnected' && typeof message.playerId === 'string') {
+      debugLog(`observer player_disconnected player=${message.playerId}`);
       writeToBridge(bridge, { type: 'reset_player', playerId: message.playerId });
       return;
     }
 
     if (message.type === 'player_removed' && typeof message.playerId === 'string') {
+      debugLog(`observer player_removed player=${message.playerId}`);
       writeToBridge(bridge, { type: 'remove_player', playerId: message.playerId });
     }
   });
@@ -218,12 +299,14 @@ function connectObserver() {
   socket.on('close', () => {
     if (!shuttingDown) {
       console.error('observer disconnected, retrying...');
+      debugLog('observer websocket closed');
       scheduleReconnect();
     }
   });
 
   socket.on('error', (error) => {
     console.error(`observer error: ${error.message}`);
+    debugLog(`observer websocket error: ${error.message}`);
   });
 }
 

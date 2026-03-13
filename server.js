@@ -330,6 +330,24 @@ export function startPhonePadServer({
     }
   };
 
+  const buildBridgeStatusPayload = () => ({
+    type: 'bridge_status',
+    connected: observers.size > 0,
+    observerCount: observers.size,
+    timestamp: Date.now()
+  });
+
+  const sendToControllers = (payload) => {
+    const encoded = JSON.stringify(payload);
+    for (const controller of controllerWss.clients) {
+      if (controller.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+
+      controller.send(encoded);
+    }
+  };
+
   const markSocketAlive = (socket) => {
     socket.isAlive = true;
     socket.on('pong', () => {
@@ -452,6 +470,7 @@ export function startPhonePadServer({
         resumed
       })
     );
+    socket.send(JSON.stringify(buildBridgeStatusPayload()));
 
     socket.on('message', (payload) => {
       socket.isAlive = true;
@@ -541,6 +560,7 @@ export function startPhonePadServer({
     socket._socket?.setNoDelay?.(true);
     updateHeartbeatMonitor();
     observers.add(socket);
+    sendToControllers(buildBridgeStatusPayload());
 
     const currentPlayers = {};
     for (const [playerId, data] of players) {
@@ -561,6 +581,7 @@ export function startPhonePadServer({
 
     socket.on('close', () => {
       observers.delete(socket);
+      sendToControllers(buildBridgeStatusPayload());
       updateHeartbeatMonitor();
     });
 

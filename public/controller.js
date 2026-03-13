@@ -1,4 +1,6 @@
 const statusElement = document.getElementById('status');
+const serverConnectionElement = document.getElementById('server-connection');
+const laptopConnectionElement = document.getElementById('laptop-connection');
 const layoutInfoElement = document.getElementById('layout-info');
 const deviceNoteElement = document.getElementById('device-note');
 const reconnectButton = document.getElementById('reconnect-now');
@@ -44,6 +46,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const token = resolveAccessToken(urlParams);
 const deviceId = getOrCreateDeviceId();
 const isAppleMobile = detectAppleMobile();
+const isAndroidPhone = detectAndroidPhone();
 const nativeVibrationSupported = typeof navigator.vibrate === 'function';
 const appleSwitchHapticsSupported = detectAppleSwitchHapticsSupport();
 
@@ -71,6 +74,9 @@ let standaloneMode = detectStandaloneMode();
 let switchHapticInput = null;
 let switchHapticLabel = null;
 let switchHapticTimer = 0;
+let fullscreenRequestInFlight = false;
+let deviceNoteText = '';
+let laptopObserverCount = 0;
 
 function createDeviceId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
@@ -114,6 +120,11 @@ function detectAppleMobile() {
   const userAgent = navigator.userAgent ?? '';
   const platform = navigator.platform ?? '';
   return /iPad|iPhone|iPod/u.test(userAgent) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function detectAndroidPhone() {
+  const userAgent = navigator.userAgent ?? '';
+  return /Android/u.test(userAgent) && /Mobile/u.test(userAgent);
 }
 
 function detectStandaloneMode() {
@@ -169,6 +180,59 @@ function syncTopChrome() {
   if (topElement) {
     topElement.hidden = landscapeCompact && !hasTopActions;
   }
+
+  syncDeviceNoteVisibility();
+}
+
+function getFullscreenElement() {
+  return document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
+}
+
+function supportsFullscreenMode() {
+  return Boolean(
+    document.fullscreenEnabled ||
+      document.webkitFullscreenEnabled ||
+      appElement.requestFullscreen ||
+      appElement.webkitRequestFullscreen
+  );
+}
+
+function shouldAutoEnterAndroidFullscreen() {
+  return isAndroidPhone && !standaloneMode && supportsFullscreenMode();
+}
+
+async function tryEnterAndroidFullscreen() {
+  if (!shouldAutoEnterAndroidFullscreen() || fullscreenRequestInFlight || getFullscreenElement()) {
+    return false;
+  }
+
+  const requestFullscreen =
+    appElement.requestFullscreen?.bind(appElement) ??
+    appElement.webkitRequestFullscreen?.bind(appElement);
+
+  if (!requestFullscreen) {
+    return false;
+  }
+
+  fullscreenRequestInFlight = true;
+  let enteredFullscreen = false;
+  try {
+    await requestFullscreen({ navigationUI: 'hide' });
+    enteredFullscreen = Boolean(getFullscreenElement());
+  } catch {
+    try {
+      await requestFullscreen();
+      enteredFullscreen = Boolean(getFullscreenElement());
+    } catch {
+      // Ignore browsers that reject fullscreen outside a qualifying gesture.
+    }
+  } finally {
+    fullscreenRequestInFlight = false;
+    syncViewportMetrics();
+    syncTopChrome();
+  }
+
+  return enteredFullscreen;
 }
 
 function sanitizeInputKeys(rawKeys) {
@@ -282,6 +346,49 @@ function setStatus(text, type) {
   statusElement.className = `status ${type}`;
 }
 
+function setConnectionBadge(element, state, text) {
+  if (!element) {
+    return;
+  }
+
+  element.textContent = text;
+  element.className = `connection-badge ${state}`;
+}
+
+function setServerConnectionState(state) {
+  const labelByState = {
+    connected: 'Server: connected',
+    connecting: 'Server: connecting',
+    disconnected: 'Server: disconnected',
+    retrying: 'Server: reconnecting',
+    error: 'Server: error'
+  };
+
+  setConnectionBadge(serverConnectionElement, state, labelByState[state] ?? 'Server: unknown');
+}
+
+function setLaptopConnectionState(state, observerCount = laptopObserverCount) {
+  laptopObserverCount = observerCount;
+
+  if (state === 'connected') {
+    const label = observerCount > 1 ? `Laptop: ${observerCount} connected` : 'Laptop: connected';
+    setConnectionBadge(laptopConnectionElement, state, label);
+    return;
+  }
+
+  if (state === 'waiting') {
+    setConnectionBadge(laptopConnectionElement, state, 'Laptop: waiting');
+    return;
+  }
+
+  if (state === 'disconnected') {
+    setConnectionBadge(laptopConnectionElement, state, 'Laptop: unavailable');
+    return;
+  }
+
+  setConnectionBadge(laptopConnectionElement, state, 'Laptop: checking');
+}
+
 function setLayoutInfo() {
   if (!layoutInfoElement) {
     return;
@@ -305,9 +412,17 @@ function setDeviceNote(text) {
     return;
   }
 
-  const normalized = String(text ?? '').trim();
-  deviceNoteElement.hidden = normalized.length === 0;
-  deviceNoteElement.textContent = normalized;
+  deviceNoteText = String(text ?? '').trim();
+  deviceNoteElement.textContent = deviceNoteText;
+  syncDeviceNoteVisibility();
+}
+
+function syncDeviceNoteVisibility() {
+  if (!deviceNoteElement) {
+    return;
+  }
+
+  deviceNoteElement.hidden = deviceNoteText.length === 0 || isLandscapeViewport();
 }
 
 function updateDeviceNote() {
@@ -544,6 +659,8 @@ function scheduleRetry(reason, nextStep) {
   if (!navigator.onLine) {
     setReconnectVisible(true);
     setStatus('offline. waiting for network', 'retrying');
+    setServerConnectionState('disconnected');
+    setLaptopConnectionState('disconnected', 0);
     return;
   }
 
@@ -552,6 +669,8 @@ function scheduleRetry(reason, nextStep) {
   retrySecondsRemaining = Math.max(1, Math.ceil(retryDelayMs / 1000));
   setReconnectVisible(true);
   setStatus(`${reason}. retrying in ${retrySecondsRemaining}s`, 'retrying');
+  setServerConnectionState('retrying');
+  setLaptopConnectionState('waiting', 0);
 
   retryCountdownTimer = setInterval(() => {
     retrySecondsRemaining -= 1;
@@ -964,6 +1083,8 @@ async function connectWebSocket() {
   clearRetryTimers();
   setReconnectVisible(false);
   setStatus('trying to connect...', 'connecting');
+  setServerConnectionState('connecting');
+  setLaptopConnectionState('waiting', 0);
   const activeSocket = new WebSocket(buildWsUrl());
   socket = activeSocket;
 
@@ -980,7 +1101,27 @@ async function connectWebSocket() {
     retryAttempts = 0;
     setReconnectVisible(false);
     setStatus('connected', 'connected');
+    setServerConnectionState('connected');
+    setLaptopConnectionState('waiting', 0);
     sendState();
+  });
+
+  activeSocket.addEventListener('message', (event) => {
+    if (socket !== activeSocket) {
+      return;
+    }
+
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    if (message.type === 'bridge_status') {
+      const observerCount = Number.isSafeInteger(message.observerCount) ? message.observerCount : 0;
+      setLaptopConnectionState(message.connected ? 'connected' : 'waiting', observerCount);
+    }
   });
 
   activeSocket.addEventListener('close', async () => {
@@ -990,6 +1131,8 @@ async function connectWebSocket() {
 
     socket = null;
     connectAttemptInFlight = false;
+    setServerConnectionState('disconnected');
+    setLaptopConnectionState('disconnected', 0);
 
     const reason = opened ? 'disconnected' : 'failed to connect';
     if (!opened && retryAttempts >= RETRY_CHECK_AUTH_AFTER) {
@@ -1001,6 +1144,8 @@ async function connectWebSocket() {
       if (postCloseCheck.invalidUrl) {
         setReconnectVisible(false);
         setStatus('invalid controller URL (missing or wrong token)', 'error');
+        setServerConnectionState('error');
+        setLaptopConnectionState('disconnected', 0);
         return;
       }
     }
@@ -1014,17 +1159,23 @@ async function connectWebSocket() {
     }
 
     setStatus('connection failed', 'disconnected');
+    setServerConnectionState('disconnected');
+    setLaptopConnectionState('disconnected', 0);
   });
 }
 
 async function initController() {
   setStatus('loading controller...', 'connecting');
   setReconnectVisible(false);
+  setServerConnectionState('connecting');
+  setLaptopConnectionState('waiting', 0);
 
   const config = await loadControllerConfig();
   if (config.invalidUrl) {
     retryAttempts = 0;
     setStatus('invalid controller URL (missing or wrong token)', 'error');
+    setServerConnectionState('error');
+    setLaptopConnectionState('disconnected', 0);
     return;
   }
 
@@ -1051,6 +1202,7 @@ async function initController() {
 }
 
 reconnectButton.addEventListener('click', () => {
+  tryEnterAndroidFullscreen();
   clearRetryTimers();
   retryAttempts = 0;
 
@@ -1066,11 +1218,15 @@ window.addEventListener('offline', () => {
   clearRetryTimers();
   setReconnectVisible(true);
   setStatus('offline. waiting for network', 'retrying');
+  setServerConnectionState('disconnected');
+  setLaptopConnectionState('disconnected', 0);
 });
 
 window.addEventListener('online', () => {
   clearRetryTimers();
   retryAttempts = 0;
+  setServerConnectionState('connecting');
+  setLaptopConnectionState('waiting', 0);
   if (!controlsReady) {
     initController();
     return;
@@ -1084,6 +1240,14 @@ window.addEventListener('resize', () => {
   syncTopChrome();
 });
 window.addEventListener('orientationchange', () => {
+  syncViewportMetrics();
+  syncTopChrome();
+});
+window.addEventListener('fullscreenchange', () => {
+  syncViewportMetrics();
+  syncTopChrome();
+});
+window.addEventListener('webkitfullscreenchange', () => {
   syncViewportMetrics();
   syncTopChrome();
 });
@@ -1103,10 +1267,23 @@ standaloneQuery?.addEventListener?.('change', () => {
   syncTopChrome();
 });
 
+const handleAndroidFullscreenGesture = async () => {
+  const enteredFullscreen = await tryEnterAndroidFullscreen();
+  if (!enteredFullscreen) {
+    return;
+  }
+
+  document.removeEventListener('pointerup', handleAndroidFullscreenGesture);
+};
+
+document.addEventListener('pointerup', handleAndroidFullscreenGesture, { passive: true });
+
 setInterval(sendState, KEEPALIVE_INTERVAL_MS);
 syncRuntimeEnvironment();
 syncViewportMetrics();
 setLayoutInfo();
 updateDeviceNote();
 syncTopChrome();
+setServerConnectionState('connecting');
+setLaptopConnectionState('waiting', 0);
 initController();

@@ -10,6 +10,7 @@ from evdev import AbsInfo, UInput, ecodes
 
 AXIS_MAX = 32767
 AXIS_DEADZONE = 0.02
+DEFAULT_AUTO_RESERVED_SLOTS = 4
 DIRECTION_KEYS = frozenset({"up", "down", "left", "right"})
 AXIS_KEYS = frozenset({"axisx", "axisy", "lx", "ly"})
 ACTION_BUTTON_CODES = (
@@ -75,6 +76,34 @@ EMPTY_DPAD_STATE = {
 active_button_layout: Tuple[str, ...] = ()
 active_button_map: Dict[str, int] = {}
 active_dropped_buttons: Tuple[str, ...] = ()
+DEBUG_ENABLED = False
+reservation_mode = "auto"
+fixed_reserved_slots = None
+minimum_reserved_slots = 0
+last_debug_state_by_player: Dict[str, str] = {}
+shutting_down = False
+
+
+def parse_boolean_env(*names: str) -> bool:
+    for name in names:
+        raw_value = os.environ.get(name)
+        if raw_value is None:
+            continue
+
+        normalized = raw_value.strip().lower()
+        if not normalized:
+            continue
+
+        return normalized not in {"0", "off", "false", "no"}
+
+    return False
+
+
+def debug_log(message: str):
+    if not DEBUG_ENABLED:
+        return
+
+    print(f"[debug] {message}", file=sys.stderr, flush=True)
 
 
 def clamp_axis(raw_value):
@@ -371,38 +400,92 @@ class VirtualPad:
 
 pads: Dict[int, VirtualPad] = {}
 player_to_slot: Dict[str, int] = {}
-fixed_reserved_slots = None
 
 
-def parse_reserved_slots():
+def parse_auto_reserved_slots():
+    raw_value = (
+        os.environ.get("PAD_AUTO_RESERVED_SLOTS")
+        or os.environ.get("PHONEPAD_AUTO_RESERVED_SLOTS")
+        or ""
+    ).strip()
+    if not raw_value:
+        return DEFAULT_AUTO_RESERVED_SLOTS
+
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        print(
+            "invalid PAD_AUTO_RESERVED_SLOTS value "
+            f"`{raw_value}`, defaulting to {DEFAULT_AUTO_RESERVED_SLOTS}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return DEFAULT_AUTO_RESERVED_SLOTS
+
+    if parsed < 1:
+        print(
+            "PAD_AUTO_RESERVED_SLOTS must be at least 1; "
+            f"defaulting to {DEFAULT_AUTO_RESERVED_SLOTS}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return DEFAULT_AUTO_RESERVED_SLOTS
+
+    return parsed
+
+
+def parse_reservation_config():
     raw_value = (
         os.environ.get("PAD_MAX_PLAYERS")
         or os.environ.get("PHONEPAD_MAX_PLAYERS")
         or ""
     ).strip()
     if not raw_value:
-        return None
+        return {
+            "mode": "auto",
+            "fixed_slots": None,
+            "minimum_slots": parse_auto_reserved_slots(),
+        }
 
     normalized = raw_value.lower()
     if normalized == "auto":
-        return None
+        return {
+            "mode": "auto",
+            "fixed_slots": None,
+            "minimum_slots": parse_auto_reserved_slots(),
+        }
+
+    if normalized == "adaptive":
+        return {
+            "mode": "adaptive",
+            "fixed_slots": None,
+            "minimum_slots": 0,
+        }
 
     try:
         parsed = int(raw_value)
     except ValueError:
         print(
             "invalid PAD_MAX_PLAYERS value "
-            f"`{raw_value}`, defaulting to adaptive mode",
+            f"`{raw_value}`, defaulting to auto mode",
             file=sys.stderr,
             flush=True,
         )
-        return None
+        return {
+            "mode": "auto",
+            "fixed_slots": None,
+            "minimum_slots": parse_auto_reserved_slots(),
+        }
 
-    return max(1, parsed)
+    return {
+        "mode": "fixed",
+        "fixed_slots": max(1, parsed),
+        "minimum_slots": max(1, parsed),
+    }
 
 
 def next_auto_reservation_target(active_player_count):
-    return max(1, active_player_count)
+    return max(minimum_reserved_slots, active_player_count)
 
 
 def ensure_pad(slot_id):
@@ -447,6 +530,9 @@ def assign_slot(player_id):
         file=sys.stderr,
         flush=True,
     )
+    debug_log(
+        f"player {normalized_player} routed to slot {next_slot}; active assignments={player_to_slot}"
+    )
     return next_slot
 
 
@@ -466,6 +552,7 @@ def release_player(player_id):
         file=sys.stderr,
         flush=True,
     )
+    last_debug_state_by_player.pop(normalized_player, None)
 
 
 def reset_pad(player_id):
@@ -479,15 +566,34 @@ def reset_pad(player_id):
         return
 
     pad.reset()
+    last_debug_state_by_player.pop(normalized_player, None)
 
 
 def apply_state(player_id, state):
-    slot_id = assign_slot(player_id)
-    ensure_pad(slot_id).apply_state(state if isinstance(state, dict) else {})
+    normalized_player = str(player_id)
+    normalized_state = state if isinstance(state, dict) else {}
+    slot_id = assign_slot(normalized_player)
+    ensure_pad(slot_id).apply_state(normalized_state)
+    if DEBUG_ENABLED:
+        active_inputs = []
+        for key, value in normalized_state.items():
+            if isinstance(value, bool):
+                if value:
+                    active_inputs.append(key)
+                continue
+
+            if isinstance(value, (int, float)) and value != 0:
+                active_inputs.append(f"{key}={value}")
+
+        summary = ",".join(active_inputs) if active_inputs else "idle"
+        if last_debug_state_by_player.get(normalized_player) != summary:
+            last_debug_state_by_player[normalized_player] = summary
+            debug_log(f"slot {slot_id} player {normalized_player} state {summary}")
 
 
 def sync_players(player_ids):
     active_players = {str(player_id) for player_id in player_ids}
+    debug_log(f"sync_players active={sorted(active_players)}")
     for player_id in tuple(player_to_slot):
         if player_id in active_players:
             continue
@@ -498,7 +604,7 @@ def sync_players(player_ids):
 def preallocate_slots(slot_count):
     created = 0
     existing_count = len(pads)
-    for slot_id in range(slot_count, existing_count, -1):
+    for slot_id in range(existing_count + 1, slot_count + 1):
         try:
             ensure_pad(slot_id)
         except OSError:
@@ -522,10 +628,11 @@ def preallocate_slots(slot_count):
 
 
 def reserve_slots_for_player_count(active_player_count):
-    if fixed_reserved_slots is not None:
-        return
-
-    target_slot_count = next_auto_reservation_target(active_player_count)
+    target_slot_count = (
+        fixed_reserved_slots
+        if fixed_reserved_slots is not None
+        else next_auto_reservation_target(active_player_count)
+    )
     if len(pads) >= target_slot_count:
         return
 
@@ -533,8 +640,16 @@ def reserve_slots_for_player_count(active_player_count):
 
 
 def shutdown(*_args):
+    global shutting_down
+    if shutting_down:
+        raise SystemExit(0)
+
+    shutting_down = True
     for pad in list(pads.values()):
-        pad.close()
+        try:
+            pad.close()
+        except OSError:
+            continue
     pads.clear()
     raise SystemExit(0)
 
@@ -542,9 +657,18 @@ def shutdown(*_args):
 signal.signal(signal.SIGINT, shutdown)
 signal.signal(signal.SIGTERM, shutdown)
 
-fixed_reserved_slots = parse_reserved_slots()
-if fixed_reserved_slots is not None:
-    preallocate_slots(fixed_reserved_slots)
+DEBUG_ENABLED = parse_boolean_env("PAD_DEBUG", "PHONEPAD_DEBUG")
+reservation_config = parse_reservation_config()
+reservation_mode = reservation_config["mode"]
+fixed_reserved_slots = reservation_config["fixed_slots"]
+minimum_reserved_slots = reservation_config["minimum_slots"]
+
+debug_log(
+    "reservation mode="
+    f"{reservation_mode} fixed_slots={fixed_reserved_slots} minimum_slots={minimum_reserved_slots}"
+)
+if minimum_reserved_slots > 0:
+    preallocate_slots(minimum_reserved_slots)
 
 for line in sys.stdin:
     line = line.strip()

@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node server.js",
     "observe": "node observe-inputs.js",
-    "client": "node cli.js"
+    "client": "node cli.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.21.2",

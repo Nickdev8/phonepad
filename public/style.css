@@ -129,6 +129,60 @@ h1 {
   font-weight: 700;
 }
 
+.connection-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.connection-badge {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.28rem 0.72rem;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: rgba(31, 51, 84, 0.88);
+  color: var(--text-soft);
+  font-size: clamp(0.76rem, 1.65vh, 0.9rem);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.connection-badge::before {
+  content: '';
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 999px;
+  background: var(--warn);
+  box-shadow: 0 0 0 0.16rem rgba(245, 158, 11, 0.18);
+}
+
+.connection-badge.connected {
+  color: var(--text);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.connection-badge.connected::before {
+  background: var(--ok);
+  box-shadow: 0 0 0 0.16rem rgba(34, 197, 94, 0.18);
+}
+
+.connection-badge.connecting::before,
+.connection-badge.retrying::before,
+.connection-badge.waiting::before {
+  background: var(--warn);
+  box-shadow: 0 0 0 0.16rem rgba(245, 158, 11, 0.18);
+}
+
+.connection-badge.disconnected::before,
+.connection-badge.error::before {
+  background: var(--danger);
+  box-shadow: 0 0 0 0.16rem rgba(239, 68, 68, 0.18);
+}
+
 .layout-info {
   color: var(--text-soft);
   letter-spacing: 0.01em;

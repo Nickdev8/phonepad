@@ -78,9 +78,11 @@ Custom layouts:
 phonepad --joystick smooth --buttons A,B,X,Y
 phonepad --joystick none --buttons A,B,START,SELECT
 phonepad driving --players auto
+phonepad driving --players adaptive
 phonepad driving --players 8
 phonepad --inputs throttle,brake,gearUp,gearDown
 phonepad --preset driving --haptics off
+phonepad ultimate-chicken-horse -d
 ```
 
 `phonepad` (no args) uses URL/token from `.env` and default `classic` layout.
@@ -144,13 +146,23 @@ phonepad
 
 `npm run client` also runs the same command.
 The command prints a QR code and keeps running until `Ctrl+C`.
-By default it uses an adaptive controller pool: it starts with the first active player and creates additional virtual controllers only when more players actually join.
-If you already know how many players you need before launching the game, `phonepad --players 4` or `PHONEPAD_MAX_PLAYERS=12` is still the most stable option because it avoids later hotplug growth.
+By default it now uses a stable auto pool: it pre-creates 4 virtual controllers on startup and can still expand later if more players join.
+This avoids the late virtual-gamepad hotplug that breaks controller ordering in some games.
+If you want the old lazy behavior, use `phonepad --players adaptive`.
+If you already know the exact player count, `phonepad --players 4` or `PHONEPAD_MAX_PLAYERS=12` keeps the device list fixed.
 
 Or pass URL/token explicitly:
 
 ```bash
 phonepad https://phonepad.nickesselman.nl YOUR_TOKEN
+```
+
+### Debug mode
+
+Use `-d` or `--debug` to print verbose laptop-side logs for observer reconnects, player snapshots, slot assignment, and per-player routed input summaries:
+
+```bash
+phonepad ultimate-chicken-horse -d
 ```
 
 ### 3) Test in browser

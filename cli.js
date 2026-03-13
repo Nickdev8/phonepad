@@ -8,6 +8,7 @@ import qrcode from 'qrcode-terminal';
 const DIRECTION_KEYS = Object.freeze(['up', 'down', 'left', 'right']);
 const DIRECTION_SET = new Set(DIRECTION_KEYS);
 const JOYSTICK_MODES = new Set(['dpad', 'smooth', 'none']);
+const DEFAULT_AUTO_RESERVED_SLOTS = 4;
 const LAYOUT_PRESETS = Object.freeze({
   classic: {
     category: 'base',
@@ -188,9 +189,38 @@ function sanitizeJoystickMode(rawValue) {
 }
 
 function parsePlayerReservation(rawValue) {
+  return parsePlayerReservationWithAutoSlots(rawValue, DEFAULT_AUTO_RESERVED_SLOTS);
+}
+
+function parseAutoReservedSlots(rawValue) {
+  const value = String(rawValue ?? '').trim();
+  if (!value) {
+    return DEFAULT_AUTO_RESERVED_SLOTS;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 64) {
+    console.error(`Invalid auto player slot count: ${rawValue}`);
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
+function parsePlayerReservationWithAutoSlots(rawValue, autoReservedSlots) {
   const value = String(rawValue ?? '').trim().toLowerCase();
   if (!value || value === 'auto') {
-    return 'auto';
+    return {
+      mode: 'auto',
+      reservedSlots: autoReservedSlots
+    };
+  }
+
+  if (value === 'adaptive') {
+    return {
+      mode: 'adaptive',
+      reservedSlots: 0
+    };
   }
 
   const parsed = Number.parseInt(value, 10);
@@ -199,11 +229,23 @@ function parsePlayerReservation(rawValue) {
     process.exit(1);
   }
 
-  return parsed;
+  return {
+    mode: 'fixed',
+    reservedSlots: parsed
+  };
 }
 
 function parseHapticsValue(rawValue) {
   const value = String(rawValue ?? 'on').trim().toLowerCase();
+  return !(value === 'off' || value === 'false' || value === '0' || value === 'no');
+}
+
+function parseBooleanFlag(rawValue) {
+  const value = String(rawValue ?? '').trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+
   return !(value === 'off' || value === 'false' || value === '0' || value === 'no');
 }
 
@@ -245,8 +287,10 @@ function printLayoutExamples() {
   console.log('  phonepad --joystick smooth --buttons A,B,X,Y');
   console.log('  phonepad --joystick none --buttons A,B,START,SELECT');
   console.log('  phonepad driving --players auto');
+  console.log('  phonepad driving --players adaptive');
   console.log('  phonepad driving --players 8');
   console.log('  phonepad --inputs throttle,brake,gearUp,gearDown');
+  console.log('  phonepad ultimate-chicken-horse -d');
 }
 
 function printUsage() {
@@ -258,21 +302,32 @@ function printUsage() {
   console.log('  --buttons <csv>                Action buttons to show');
   console.log('  --inputs <csv>                 Full custom key list');
   console.log('  --haptics <on|off>             Phone vibration feedback');
-  console.log('  --players, --max-players <n|auto>  Reserve local virtual controller slots');
+  console.log('  --players, --max-players <n|auto|adaptive>  Local virtual controller reservation mode');
   console.log('  --url <https://...>            Controller base URL override');
   console.log('  --token <secret>               Access token override');
+  console.log('  -d, --debug                    Verbose client/bridge logs');
   console.log('  -h, --help                     Print this help');
 }
 
+function describePlayerReservation(playerReservation) {
+  if (playerReservation.mode === 'adaptive') {
+    return 'adaptive (lazy slot creation)';
+  }
+
+  if (playerReservation.mode === 'auto') {
+    return `auto (${playerReservation.reservedSlots}-slot stable pool, expands as needed)`;
+  }
+
+  return `${playerReservation.reservedSlots} reserved slots`;
+}
+
 function printSelectedLayout(layoutSummary) {
-  const playerLabel =
-    layoutSummary.maxPlayers === 'auto' ? 'auto (adaptive pool)' : `${layoutSummary.maxPlayers} reserved slots`;
   console.log('Selected controller setup:');
   console.log(`  preset:   ${layoutSummary.preset}`);
   console.log(`  joystick: ${layoutSummary.joystickMode}`);
   console.log(`  buttons:  ${layoutSummary.buttons.length > 0 ? layoutSummary.buttons.join(',') : '(none)'}`);
   console.log(`  haptics:  ${layoutSummary.haptics ? 'on' : 'off'}`);
-  console.log(`  players:  ${playerLabel}`);
+  console.log(`  players:  ${describePlayerReservation(layoutSummary.playerReservation)}`);
   console.log(`  inputs:   ${layoutSummary.inputKeys.join(',')}`);
 }
 
@@ -340,6 +395,7 @@ function resolveLayoutConfig({
 function parseArgs(rawArgs, defaults) {
   let showHelp = false;
   let listLayouts = false;
+  let debug = defaults.debug;
   let presetName = defaults.presetName;
   let joystickValue = defaults.joystickValue;
   let buttonsValue = defaults.buttonsValue;
@@ -362,6 +418,11 @@ function parseArgs(rawArgs, defaults) {
 
     if (arg === '-h' || arg === '--help') {
       showHelp = true;
+      continue;
+    }
+
+    if (arg === '-d' || arg === '--debug') {
+      debug = true;
       continue;
     }
 
@@ -574,6 +635,7 @@ function parseArgs(rawArgs, defaults) {
   return {
     showHelp,
     listLayouts,
+    debug,
     presetName,
     joystickValue,
     buttonsValue,
@@ -601,6 +663,16 @@ function buildControllerUrl(baseUrl, accessToken) {
 
 async function runPhonePadCommand(rawArgs) {
   const fileEnv = loadDotEnv(path.join(__dirname, '.env'));
+  const envDebugSetting = readSetting(process.env.PAD_DEBUG, process.env.PHONEPAD_DEBUG, fileEnv.PAD_DEBUG, fileEnv.PHONEPAD_DEBUG);
+  const autoReservedSlots = parseAutoReservedSlots(
+    readSetting(
+      process.env.PAD_AUTO_RESERVED_SLOTS,
+      process.env.PHONEPAD_AUTO_RESERVED_SLOTS,
+      fileEnv.PAD_AUTO_RESERVED_SLOTS,
+      fileEnv.PHONEPAD_AUTO_RESERVED_SLOTS,
+      String(DEFAULT_AUTO_RESERVED_SLOTS)
+    )
+  );
 
   const defaults = {
     presetName: readSetting(
@@ -623,6 +695,7 @@ async function runPhonePadCommand(rawArgs) {
     ),
     baseUrl: readSetting(process.env.PAD_URL, process.env.PHONEPAD_PUBLIC_URL, fileEnv.PHONEPAD_PUBLIC_URL),
     accessToken: readSetting(process.env.PAD_TOKEN, process.env.PHONEPAD_ACCESS_TOKEN, fileEnv.PHONEPAD_ACCESS_TOKEN),
+    debug: parseBooleanFlag(envDebugSetting),
     usedJoystickOverride: Boolean(readSetting(process.env.PHONEPAD_JOYSTICK, fileEnv.PHONEPAD_JOYSTICK)),
     usedButtonsOverride: Boolean(readSetting(process.env.PHONEPAD_BUTTONS, fileEnv.PHONEPAD_BUTTONS)),
     usedInputsOverride: Boolean(readSetting(process.env.PHONEPAD_INPUTS, fileEnv.PHONEPAD_INPUTS)),
@@ -669,7 +742,7 @@ async function runPhonePadCommand(rawArgs) {
   }
 
   const layoutConfig = resolveLayoutConfig(parsed);
-  const maxPlayers = parsePlayerReservation(parsed.maxPlayersValue);
+  const playerReservation = parsePlayerReservationWithAutoSlots(parsed.maxPlayersValue, autoReservedSlots);
 
   let controllerUrl;
   try {
@@ -687,9 +760,12 @@ async function runPhonePadCommand(rawArgs) {
     joystickMode: layoutConfig.controllerConfig.joystickMode,
     buttons: layoutConfig.controllerConfig.buttons,
     haptics: layoutConfig.controllerConfig.haptics,
-    maxPlayers,
+    playerReservation,
     inputKeys: layoutConfig.inputKeys
   });
+  if (parsed.debug) {
+    console.log('  debug:    on');
+  }
   console.log(`Open on phone: ${controllerUrl}`);
   console.log('Tip: refresh the controller page to apply layout changes from a new `phonepad` command.');
   console.log('Press Ctrl+C to stop');
@@ -706,7 +782,9 @@ async function runPhonePadCommand(rawArgs) {
         buttons: layoutConfig.controllerConfig.buttons,
         haptics: layoutConfig.controllerConfig.haptics
       }),
-      PAD_MAX_PLAYERS: String(maxPlayers)
+      PAD_MAX_PLAYERS: playerReservation.mode === 'fixed' ? String(playerReservation.reservedSlots) : playerReservation.mode,
+      PAD_AUTO_RESERVED_SLOTS: String(playerReservation.reservedSlots || autoReservedSlots),
+      PAD_DEBUG: parsed.debug ? '1' : '0'
     }
   });
 
@@ -739,4 +817,28 @@ async function runPhonePadCommand(rawArgs) {
   process.exit(code ?? 0);
 }
 
-runPhonePadCommand(process.argv.slice(2));
+export {
+  DEFAULT_AUTO_RESERVED_SLOTS,
+  describePlayerReservation,
+  isDirectCliInvocation,
+  parseArgs,
+  parseAutoReservedSlots,
+  parsePlayerReservation,
+  resolveLayoutConfig
+};
+
+function isDirectCliInvocation(argvValue = process.argv[1]) {
+  if (!argvValue) {
+    return false;
+  }
+
+  try {
+    return fs.realpathSync(argvValue) === __filename;
+  } catch {
+    return path.resolve(argvValue) === __filename;
+  }
+}
+
+if (isDirectCliInvocation()) {
+  runPhonePadCommand(process.argv.slice(2));
+}
