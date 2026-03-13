@@ -76,6 +76,19 @@ function buildLayoutUrl(baseUrl) {
   return url.toString();
 }
 
+function redactTokenInUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.searchParams.has('token')) {
+      url.searchParams.set('token', 'REDACTED');
+    }
+
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 function writeToBridge(bridgeProcess, message) {
   debugBridgeMessage(message);
   if (bridgeProcess.killed || !bridgeProcess.stdin.writable) {
@@ -183,8 +196,8 @@ let shuttingDown = false;
 let publishedLayout = false;
 let layoutUrl = '';
 
-if (!baseUrl || !token) {
-  console.error('Usage: node client.js <base_url> <token>');
+if (!baseUrl) {
+  console.error('Usage: node client.js <base_url> [admin_token]');
   console.error('Or set PAD_URL/PAD_TOKEN or PHONEPAD_PUBLIC_URL/PHONEPAD_ACCESS_TOKEN in .env');
   process.exit(1);
 }
@@ -241,12 +254,16 @@ async function publishLayout() {
   }
 
   try {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
     const response = await fetch(layoutUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
+      headers,
       body: JSON.stringify(layoutPayload)
     });
 
@@ -274,7 +291,7 @@ function connectObserver() {
   socket = new WebSocket(observeUrl);
 
   socket.on('open', () => {
-    console.log(`client connected to ${observeUrl}`);
+    console.log(`client connected to ${redactTokenInUrl(observeUrl)}`);
     debugLog('observer websocket open');
     publishLayout();
   });

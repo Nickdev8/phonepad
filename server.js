@@ -13,6 +13,7 @@ const DIRECTION_KEYS = Object.freeze(['up', 'down', 'left', 'right']);
 const DISCONNECT_GRACE_MS = 8000;
 const DEVICE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const WS_HEARTBEAT_INTERVAL_MS = 10_000;
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._~-]{1,256}$/;
 
 function sanitizeInputKeys(rawInputKeys) {
   const sourceKeys = Array.isArray(rawInputKeys)
@@ -94,6 +95,19 @@ function sanitizeControllerConfig(rawConfig, inputKeys) {
   };
 }
 
+function sanitizeAccessToken(rawToken) {
+  const token = String(rawToken ?? '').trim();
+  if (!token) {
+    return '';
+  }
+
+  if (!ACCESS_TOKEN_PATTERN.test(token)) {
+    return '';
+  }
+
+  return token;
+}
+
 function tokensMatch(expectedToken, providedToken) {
   if (!expectedToken) {
     return true;
@@ -143,18 +157,24 @@ function getDeviceIdFromRequest(request) {
   return deviceId;
 }
 
-function isAuthorizedRequest(request, accessToken) {
-  if (!accessToken) {
+function isAuthorizedRequest(request, accessTokens) {
+  const tokens = (Array.isArray(accessTokens) ? accessTokens : [accessTokens])
+    .map((token) => String(token ?? '').trim())
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
     return true;
   }
 
-  return tokensMatch(accessToken, getTokenFromRequest(request));
+  const providedToken = getTokenFromRequest(request);
+  return tokens.some((token) => tokensMatch(token, providedToken));
 }
 
 export function startPhonePadServer({
   port = 3000,
   host = '0.0.0.0',
   accessToken = '',
+  controllerAccessToken = '',
   inputKeys = DEFAULT_INPUT_KEYS,
   controllerConfig = {}
 } = {}) {
@@ -170,11 +190,16 @@ export function startPhonePadServer({
   const players = new Map();
   const deviceToPlayerId = new Map();
   const observers = new Set();
-  const requiredAccessToken = String(accessToken ?? '').trim();
+  const adminAccessToken = sanitizeAccessToken(accessToken);
+  let activeControllerAccessToken = sanitizeAccessToken(controllerAccessToken);
   let activeInputKeys = sanitizeInputKeys(inputKeys);
   let activeControllerConfig = sanitizeControllerConfig(controllerConfig, activeInputKeys);
   let nextPlayerId = 1;
   let heartbeatTimer = null;
+
+  const isAdminRequestAuthorized = (request) => isAuthorizedRequest(request, adminAccessToken);
+  const isControllerRequestAuthorized = (request) =>
+    isAuthorizedRequest(request, activeControllerAccessToken || adminAccessToken);
 
   const createEmptyState = () =>
     Object.fromEntries(activeInputKeys.map((key) => [key, false]));
@@ -244,7 +269,7 @@ export function startPhonePadServer({
   });
 
   app.get('/config', (req, res) => {
-    if (!isAuthorizedRequest(req, requiredAccessToken)) {
+    if (!isControllerRequestAuthorized(req)) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }
@@ -259,7 +284,7 @@ export function startPhonePadServer({
   });
 
   app.post('/layout', (req, res) => {
-    if (!isAuthorizedRequest(req, requiredAccessToken)) {
+    if (!isAdminRequestAuthorized(req)) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }
@@ -276,7 +301,7 @@ export function startPhonePadServer({
   });
 
   app.get('/state', (req, res) => {
-    if (!isAuthorizedRequest(req, requiredAccessToken)) {
+    if (!isAdminRequestAuthorized(req)) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }
@@ -293,6 +318,38 @@ export function startPhonePadServer({
     res.json({ players: allPlayers });
   });
 
+  app.post('/session', (req, res) => {
+    if (!isAdminRequestAuthorized(req)) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+
+    const nextControllerToken = sanitizeAccessToken(req.body?.controllerToken);
+    if (!nextControllerToken) {
+      res.status(400).json({ error: 'invalid_controller_token' });
+      return;
+    }
+
+    const tokenChanged = nextControllerToken !== activeControllerAccessToken;
+    activeControllerAccessToken = nextControllerToken;
+
+    if (tokenChanged) {
+      for (const controller of controllerWss.clients) {
+        if (controller.readyState !== WebSocket.OPEN) {
+          continue;
+        }
+
+        controller.close(4001, 'controller_token_rotated');
+      }
+    }
+
+    res.json({
+      ok: true,
+      controllerTokenSet: true,
+      rotated: tokenChanged
+    });
+  });
+
   server.on('upgrade', (request, socket, head) => {
     const requestUrl = getRequestUrl(request);
 
@@ -301,7 +358,10 @@ export function startPhonePadServer({
       return;
     }
 
-    if (!isAuthorizedRequest(request, requiredAccessToken)) {
+    if (
+      (requestUrl.pathname === '/observe' && !isAdminRequestAuthorized(request)) ||
+      (requestUrl.pathname === '/ws' && !isControllerRequestAuthorized(request))
+    ) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
@@ -605,6 +665,7 @@ export function startPhonePadServer({
         wss: controllerWss,
         observerWss,
         players,
+        getControllerAccessToken: () => activeControllerAccessToken,
         stop: () =>
           new Promise((stopResolve, stopReject) => {
             if (heartbeatTimer) {
@@ -658,6 +719,7 @@ async function runFromEnv() {
   const port = Number.isFinite(configuredPort) ? configuredPort : 3000;
   const host = process.env.PHONEPAD_HOST?.trim() || '0.0.0.0';
   const accessToken = process.env.PHONEPAD_ACCESS_TOKEN?.trim() || '';
+  const controllerAccessToken = process.env.PHONEPAD_CONTROLLER_ACCESS_TOKEN?.trim() || '';
   const publicUrl = process.env.PHONEPAD_PUBLIC_URL?.trim() || '';
 
   if (publicUrl && !accessToken) {
@@ -671,6 +733,7 @@ async function runFromEnv() {
       port,
       host,
       accessToken,
+      controllerAccessToken,
       inputKeys: process.env.PHONEPAD_INPUTS?.trim() || DEFAULT_INPUT_KEYS,
       controllerConfig: {
         preset: process.env.PHONEPAD_PRESET?.trim() || 'classic',

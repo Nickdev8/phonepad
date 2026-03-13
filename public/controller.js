@@ -3,6 +3,7 @@ const serverConnectionElement = document.getElementById('server-connection');
 const laptopConnectionElement = document.getElementById('laptop-connection');
 const layoutInfoElement = document.getElementById('layout-info');
 const deviceNoteElement = document.getElementById('device-note');
+const takeControlButton = document.getElementById('take-control');
 const fullscreenButton = document.getElementById('fullscreen-toggle');
 const reconnectButton = document.getElementById('reconnect-now');
 const topElement = document.querySelector('.top');
@@ -12,7 +13,8 @@ const actionsElement = document.getElementById('actions');
 const extrasElement = document.getElementById('extras');
 
 const DEVICE_STORAGE_KEY = 'phonepad_device_id';
-const TOKEN_STORAGE_KEY = 'phonepad_access_token';
+const TOKEN_STORAGE_KEY = 'phonepad_session_token';
+const LEGACY_TOKEN_STORAGE_KEY = 'phonepad_access_token';
 const AUTH_CHECK_TIMEOUT_MS = 3000;
 const KEEPALIVE_INTERVAL_MS = 1000 / 12;
 const RETRY_BASE_MS = 250;
@@ -46,6 +48,8 @@ const DPAD_LABELS = Object.freeze({
 const urlParams = new URLSearchParams(window.location.search);
 const token = resolveAccessToken(urlParams);
 const deviceId = getOrCreateDeviceId();
+const tabSessionId = createTabSessionId();
+const TAB_OWNERSHIP_STORAGE_KEY = `phonepad_active_tab:${deviceId}`;
 const isAppleMobile = detectAppleMobile();
 const isAndroidPhone = detectAndroidPhone();
 const nativeVibrationSupported = typeof navigator.vibrate === 'function';
@@ -78,6 +82,7 @@ let switchHapticTimer = 0;
 let fullscreenRequestInFlight = false;
 let deviceNoteText = '';
 let laptopObserverCount = 0;
+let tabOwnsController = false;
 
 function createDeviceId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
@@ -85,6 +90,14 @@ function createDeviceId() {
   }
 
   return `phonepad-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createTabSessionId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function getOrCreateDeviceId() {
@@ -105,16 +118,38 @@ function getOrCreateDeviceId() {
 function resolveAccessToken(searchParams) {
   const fromQuery = (searchParams.get('token') ?? '').trim();
 
-  try {
-    if (fromQuery) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, fromQuery);
-      return fromQuery;
-    }
+  if (fromQuery) {
+    try {
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, fromQuery);
+    } catch {}
 
-    return (localStorage.getItem(TOKEN_STORAGE_KEY) ?? '').trim();
-  } catch {
+    try {
+      localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+    } catch {}
+
     return fromQuery;
   }
+
+  try {
+    const fromSession = (sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? '').trim();
+    if (fromSession) {
+      return fromSession;
+    }
+  } catch {}
+
+  try {
+    const legacyToken = (localStorage.getItem(LEGACY_TOKEN_STORAGE_KEY) ?? '').trim();
+    if (legacyToken) {
+      try {
+        sessionStorage.setItem(TOKEN_STORAGE_KEY, legacyToken);
+      } catch {}
+
+      localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+      return legacyToken;
+    }
+  } catch {}
+
+  return '';
 }
 
 function detectAppleMobile() {
@@ -166,7 +201,7 @@ function syncRuntimeEnvironment() {
 }
 
 function hasVisibleTopActions() {
-  return !reconnectButton.hidden || !fullscreenButton.hidden;
+  return !takeControlButton.hidden || !reconnectButton.hidden || !fullscreenButton.hidden;
 }
 
 function isLandscapeViewport() {
@@ -215,6 +250,112 @@ function syncFullscreenButton() {
   }
 
   fullscreenButton.hidden = !shouldShowAndroidFullscreenButton();
+  syncTopChrome();
+}
+
+function readTabOwnership() {
+  try {
+    const rawValue = localStorage.getItem(TAB_OWNERSHIP_STORAGE_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue);
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.tabId !== 'string') {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeTabOwnership() {
+  try {
+    localStorage.setItem(
+      TAB_OWNERSHIP_STORAGE_KEY,
+      JSON.stringify({
+        tabId: tabSessionId,
+        updatedAt: Date.now()
+      })
+    );
+  } catch {
+    // Storage access is best effort only.
+  }
+}
+
+function clearTabOwnership() {
+  try {
+    const currentOwner = readTabOwnership();
+    if (currentOwner?.tabId === tabSessionId) {
+      localStorage.removeItem(TAB_OWNERSHIP_STORAGE_KEY);
+    }
+  } catch {
+    // Storage access is best effort only.
+  }
+}
+
+function closeControllerSocket() {
+  clearRetryTimers();
+  connectAttemptInFlight = false;
+
+  const activeSocket = socket;
+  socket = null;
+  if (!activeSocket) {
+    return;
+  }
+
+  if (activeSocket.readyState === WebSocket.CONNECTING || activeSocket.readyState === WebSocket.OPEN) {
+    try {
+      activeSocket.close(4000, 'inactive_tab');
+    } catch {
+      // Ignore close races during tab handoff.
+    }
+  }
+}
+
+function setTabOwnershipState(isOwner) {
+  if (tabOwnsController === isOwner) {
+    appElement.classList.toggle('tab-inactive', !isOwner);
+    takeControlButton.hidden = isOwner;
+    syncTopChrome();
+    return;
+  }
+
+  tabOwnsController = isOwner;
+  appElement.classList.toggle('tab-inactive', !isOwner);
+  takeControlButton.hidden = isOwner;
+
+  if (!isOwner) {
+    closeControllerSocket();
+    syncTopChrome();
+    return;
+  }
+
+  syncTopChrome();
+  if (!controlsReady) {
+    initController();
+    return;
+  }
+
+  connectWebSocket();
+}
+
+function claimControllerOwnership() {
+  if (document.visibilityState !== 'visible') {
+    setTabOwnershipState(false);
+    return false;
+  }
+
+  writeTabOwnership();
+  setTabOwnershipState(true);
+  return true;
+}
+
+function releaseControllerOwnership() {
+  clearTabOwnership();
+  setTabOwnershipState(false);
 }
 
 async function tryEnterAndroidFullscreen() {
@@ -678,6 +819,10 @@ async function checkControllerUrl() {
 function scheduleRetry(reason, nextStep) {
   clearRetryTimers();
 
+  if (!tabOwnsController) {
+    return;
+  }
+
   if (!navigator.onLine) {
     setReconnectVisible(true);
     setStatus('offline. waiting for network', 'retrying');
@@ -708,7 +853,7 @@ function scheduleRetry(reason, nextStep) {
 }
 
 function sendState() {
-  if (!controlsReady || !socket || socket.readyState !== WebSocket.OPEN) {
+  if (!tabOwnsController || !controlsReady || !socket || socket.readyState !== WebSocket.OPEN) {
     return;
   }
 
@@ -856,6 +1001,13 @@ function createControlButton(key, dpadSlot = '') {
 
   bindButton(button, key);
   return button;
+}
+
+function createDpadCore() {
+  const core = document.createElement('div');
+  core.className = 'dpad-core';
+  core.setAttribute('aria-hidden', 'true');
+  return core;
 }
 
 function clearSmoothStick() {
@@ -1057,6 +1209,8 @@ function renderControls() {
 
       dpadElement.appendChild(createControlButton(key, direction));
     }
+
+    dpadElement.appendChild(createDpadCore());
   } else if (controllerConfig.joystickMode === 'smooth' && hasDirections) {
     dpadElement.classList.add('smooth-host');
     const smoothStick = createSmoothStick();
@@ -1093,7 +1247,7 @@ function renderControls() {
 }
 
 async function connectWebSocket() {
-  if (!controlsReady || connectAttemptInFlight) {
+  if (!tabOwnsController || !controlsReady || connectAttemptInFlight) {
     return;
   }
 
@@ -1187,6 +1341,10 @@ async function connectWebSocket() {
 }
 
 async function initController() {
+  if (!tabOwnsController) {
+    return;
+  }
+
   setStatus('loading controller...', 'connecting');
   setReconnectVisible(false);
   setServerConnectionState('connecting');
@@ -1224,6 +1382,11 @@ async function initController() {
 }
 
 reconnectButton.addEventListener('click', () => {
+  if (!tabOwnsController) {
+    claimControllerOwnership();
+    return;
+  }
+
   tryEnterAndroidFullscreen();
   clearRetryTimers();
   retryAttempts = 0;
@@ -1240,6 +1403,10 @@ fullscreenButton?.addEventListener('click', async () => {
   await tryEnterAndroidFullscreen();
 });
 
+takeControlButton?.addEventListener('click', () => {
+  claimControllerOwnership();
+});
+
 window.addEventListener('offline', () => {
   clearRetryTimers();
   setReconnectVisible(true);
@@ -1249,6 +1416,10 @@ window.addEventListener('offline', () => {
 });
 
 window.addEventListener('online', () => {
+  if (!tabOwnsController) {
+    return;
+  }
+
   clearRetryTimers();
   retryAttempts = 0;
   setServerConnectionState('connecting');
@@ -1298,6 +1469,48 @@ standaloneQuery?.addEventListener?.('change', () => {
   syncTopChrome();
 });
 
+window.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    claimControllerOwnership();
+    return;
+  }
+
+  releaseControllerOwnership();
+});
+
+window.addEventListener('pagehide', () => {
+  releaseControllerOwnership();
+});
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== TAB_OWNERSHIP_STORAGE_KEY) {
+    return;
+  }
+
+  const owner = event.newValue ? readTabOwnership() : null;
+  if (!owner) {
+    if (document.visibilityState === 'visible') {
+      claimControllerOwnership();
+      return;
+    }
+
+    setTabOwnershipState(false);
+    return;
+  }
+
+  if (owner.tabId === tabSessionId) {
+    setTabOwnershipState(true);
+    return;
+  }
+
+  if (document.visibilityState === 'visible') {
+    claimControllerOwnership();
+    return;
+  }
+
+  setTabOwnershipState(false);
+});
+
 const handleAndroidFullscreenGesture = async () => {
   const enteredFullscreen = await tryEnterAndroidFullscreen();
   if (!enteredFullscreen) {
@@ -1318,4 +1531,4 @@ updateDeviceNote();
 syncTopChrome();
 setServerConnectionState('connecting');
 setLaptopConnectionState('waiting', 0);
-initController();
+claimControllerOwnership();

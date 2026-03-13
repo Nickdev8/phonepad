@@ -8,6 +8,7 @@ import {
   DEFAULT_AUTO_RESERVED_SLOTS,
   describePlayerReservation,
   isDirectCliInvocation,
+  loadOrCreateControllerSessionToken,
   parseArgs,
   parsePlayerReservation
 } from './cli.js';
@@ -85,6 +86,47 @@ test('isDirectCliInvocation resolves symlinked bin paths', () => {
   try {
     fs.symlinkSync(CLI_FILENAME, symlinkPath);
     assert.equal(isDirectCliInvocation(symlinkPath), true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('loadOrCreateControllerSessionToken reuses the same token within one boot marker', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phonepad-session-'));
+  const statePath = path.join(tempDir, 'controller-session.json');
+
+  try {
+    const firstToken = loadOrCreateControllerSessionToken({
+      statePath,
+      bootMarker: 'boot-a'
+    });
+    const secondToken = loadOrCreateControllerSessionToken({
+      statePath,
+      bootMarker: 'boot-a'
+    });
+
+    assert.match(firstToken, /^[a-f0-9]{64}$/);
+    assert.equal(secondToken, firstToken);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('loadOrCreateControllerSessionToken rotates when the boot marker changes', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phonepad-session-'));
+  const statePath = path.join(tempDir, 'controller-session.json');
+
+  try {
+    const firstToken = loadOrCreateControllerSessionToken({
+      statePath,
+      bootMarker: 'boot-a'
+    });
+    const secondToken = loadOrCreateControllerSessionToken({
+      statePath,
+      bootMarker: 'boot-b'
+    });
+
+    assert.notEqual(secondToken, firstToken);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

@@ -14,20 +14,20 @@ node server.js
 1. Copy `.env.example` to `.env`.
 2. Set:
    - `PHONEPAD_PUBLIC_URL` to your public HTTPS URL (for example `https://phonepad.nickesselman.nl`)
-   - `PHONEPAD_ACCESS_TOKEN` to a long random secret
+   - `PHONEPAD_ACCESS_TOKEN` to a long random admin secret kept on the laptop/server side
 3. Start:
 
 ```bash
 docker compose up -d --build
 ```
 
-Open the controller URL printed in logs:
+Open the controller URL printed by the laptop client:
 
 ```bash
-docker compose logs -f phonepad
+phonepad
 ```
 
-The URL includes `?token=...`. Keep that link private.
+That phone URL includes a controller session token. It is different from `PHONEPAD_ACCESS_TOKEN`, and it rotates once per laptop boot/login session instead of on every `phonepad` run.
 
 ## Reverse proxy / tunnel requirement
 
@@ -35,7 +35,7 @@ Point your subdomain (or tunnel) to this container's `3017` port and keep WebSoc
 
 ## Phone UI
 
-The page supports both portrait and landscape with no scrolling, and caches the token locally after the first valid launch so refreshes keep working.
+The page supports both portrait and landscape with no scrolling, and keeps the controller token for the current browser tab session so refreshes of the same tab keep working.
 In landscape, the header collapses away so the controls take the screen unless reconnect is needed.
 Safari does not expose the web vibration API here. On supported Apple versions, PhonePad uses Safari's native HTML `switch` haptic path; older versions still fall back to visual press feedback.
 
@@ -85,11 +85,11 @@ phonepad --preset driving --haptics off
 phonepad ultimate-chicken-horse -d
 ```
 
-`phonepad` (no args) uses URL/token from `.env` and default `classic` layout.
+`phonepad` (no args) uses URL/admin token from `.env` and default `classic` layout.
 
 ## Debug state
 
-`/state` requires the same token in public mode:
+`/state` requires the admin token in public mode:
 
 ```bash
 curl "https://phonepad.nickesselman.nl/state?token=YOUR_TOKEN"
@@ -150,8 +150,9 @@ By default it now uses a stable auto pool: it pre-creates 4 virtual controllers 
 This avoids the late virtual-gamepad hotplug that breaks controller ordering in some games.
 If you want the old lazy behavior, use `phonepad --players adaptive`.
 If you already know the exact player count, `phonepad --players 4` or `PHONEPAD_MAX_PLAYERS=12` keeps the device list fixed.
+The QR code and phone URL use a reboot-scoped controller session token generated on the laptop. The long-lived `PHONEPAD_ACCESS_TOKEN` stays on the laptop/server side for admin actions like publishing layout changes and observer access.
 
-Or pass URL/token explicitly:
+Or pass URL/admin token explicitly:
 
 ```bash
 phonepad https://phonepad.nickesselman.nl YOUR_TOKEN

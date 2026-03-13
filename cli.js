@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +11,8 @@ const DIRECTION_KEYS = Object.freeze(['up', 'down', 'left', 'right']);
 const DIRECTION_SET = new Set(DIRECTION_KEYS);
 const JOYSTICK_MODES = new Set(['dpad', 'smooth', 'none']);
 const DEFAULT_AUTO_RESERVED_SLOTS = 4;
+const SESSION_TOKEN_FILENAME = 'controller-session.json';
+const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9._~-]{1,256}$/;
 const LAYOUT_PRESETS = Object.freeze({
   classic: {
     category: 'base',
@@ -249,6 +253,86 @@ function parseBooleanFlag(rawValue) {
   return !(value === 'off' || value === 'false' || value === '0' || value === 'no');
 }
 
+function sanitizeSessionToken(rawValue) {
+  const value = String(rawValue ?? '').trim();
+  if (!value || !SESSION_TOKEN_PATTERN.test(value)) {
+    return '';
+  }
+
+  return value;
+}
+
+function generateControllerSessionToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function readBootMarker() {
+  const fromEnv = readSetting(process.env.PHONEPAD_SESSION_BOOT_ID);
+  if (fromEnv) {
+    return fromEnv;
+  }
+
+  try {
+    return fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function resolveControllerSessionStatePath() {
+  const runtimeDir = readSetting(process.env.XDG_RUNTIME_DIR);
+  if (runtimeDir) {
+    return path.join(runtimeDir, 'phonepad', SESSION_TOKEN_FILENAME);
+  }
+
+  const uid = typeof process.getuid === 'function' ? String(process.getuid()) : 'default';
+  return path.join(os.tmpdir(), `phonepad-${uid}`, SESSION_TOKEN_FILENAME);
+}
+
+function loadOrCreateControllerSessionToken({
+  statePath = resolveControllerSessionStatePath(),
+  bootMarker = readBootMarker() || 'session'
+} = {}) {
+  try {
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  } catch {}
+
+  try {
+    const rawExisting = fs.readFileSync(statePath, 'utf8');
+    const parsed = JSON.parse(rawExisting);
+    const existingToken = sanitizeSessionToken(parsed?.token);
+    const existingBootMarker = String(parsed?.bootMarker ?? '').trim();
+    if (existingToken && existingBootMarker === bootMarker) {
+      return existingToken;
+    }
+  } catch {
+    // Missing or invalid token state falls through to regeneration.
+  }
+
+  const nextToken = generateControllerSessionToken();
+  try {
+    fs.writeFileSync(
+      statePath,
+      JSON.stringify(
+        {
+          bootMarker,
+          token: nextToken,
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      ),
+      {
+        mode: 0o600
+      }
+    );
+  } catch {
+    // Best effort persistence; the generated token still works for this run.
+  }
+
+  return nextToken;
+}
+
 function looksLikeUrl(value) {
   try {
     const parsed = new URL(value);
@@ -294,7 +378,7 @@ function printLayoutExamples() {
 }
 
 function printUsage() {
-  console.log('Usage: phonepad [layout|url token] [options]');
+  console.log('Usage: phonepad [layout|url [admin_token]] [options]');
   console.log('Options:');
   console.log('  --list-layouts                 Print layout options and exit');
   console.log('  --preset, --layout <name>      Preset/profile name (use --list-layouts)');
@@ -304,7 +388,7 @@ function printUsage() {
   console.log('  --haptics <on|off>             Phone vibration feedback');
   console.log('  --players, --max-players <n|auto|adaptive>  Local virtual controller reservation mode');
   console.log('  --url <https://...>            Controller base URL override');
-  console.log('  --token <secret>               Access token override');
+  console.log('  --token <secret>               Admin access token override');
   console.log('  -d, --debug                    Verbose client/bridge logs');
   console.log('  -h, --help                     Print this help');
 }
@@ -661,6 +745,34 @@ function buildControllerUrl(baseUrl, accessToken) {
   return controllerUrl.toString();
 }
 
+async function publishControllerSessionToken(baseUrl, adminAccessToken, controllerAccessToken) {
+  const sessionUrl = new URL(baseUrl);
+  sessionUrl.pathname = '/session';
+  sessionUrl.search = '';
+
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (adminAccessToken) {
+    headers.Authorization = `Bearer ${adminAccessToken}`;
+  }
+
+  const response = await fetch(sessionUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      controllerToken: controllerAccessToken
+    })
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  const reason = response.status === 401 ? 'unauthorized' : `HTTP ${response.status}`;
+  throw new Error(reason);
+}
+
 async function runPhonePadCommand(rawArgs) {
   const fileEnv = loadDotEnv(path.join(__dirname, '.env'));
   const envDebugSetting = readSetting(process.env.PAD_DEBUG, process.env.PHONEPAD_DEBUG, fileEnv.PAD_DEBUG, fileEnv.PHONEPAD_DEBUG);
@@ -734,21 +846,33 @@ async function runPhonePadCommand(rawArgs) {
     process.exit(0);
   }
 
-  if (!parsed.baseUrl || !parsed.accessToken) {
-    console.error('Missing controller URL/token.');
-    console.error('Set PHONEPAD_PUBLIC_URL and PHONEPAD_ACCESS_TOKEN in .env, or pass --url and --token.');
+  if (!parsed.baseUrl) {
+    console.error('Missing controller URL.');
+    console.error('Set PHONEPAD_PUBLIC_URL in .env, or pass --url.');
     printUsage();
     process.exit(1);
   }
 
   const layoutConfig = resolveLayoutConfig(parsed);
   const playerReservation = parsePlayerReservationWithAutoSlots(parsed.maxPlayersValue, autoReservedSlots);
+  const adminAccessToken = parsed.accessToken;
+  const controllerAccessToken = loadOrCreateControllerSessionToken();
 
   let controllerUrl;
   try {
-    controllerUrl = buildControllerUrl(parsed.baseUrl, parsed.accessToken);
+    controllerUrl = buildControllerUrl(parsed.baseUrl, controllerAccessToken);
   } catch {
     console.error(`Invalid base URL: ${parsed.baseUrl}`);
+    process.exit(1);
+  }
+
+  try {
+    await publishControllerSessionToken(parsed.baseUrl, adminAccessToken, controllerAccessToken);
+  } catch (error) {
+    console.error(`Failed to publish controller session token: ${error.message}`);
+    if (!adminAccessToken) {
+      console.error('Set PHONEPAD_ACCESS_TOKEN in .env or pass --token so the laptop can update the server-side controller session token.');
+    }
     process.exit(1);
   }
 
@@ -771,7 +895,7 @@ async function runPhonePadCommand(rawArgs) {
   console.log('Press Ctrl+C to stop');
   qrcode.generate(controllerUrl, { small: true });
 
-  const childProcess = spawn(process.execPath, [path.join(__dirname, 'client.js'), parsed.baseUrl, parsed.accessToken], {
+  const childProcess = spawn(process.execPath, [path.join(__dirname, 'client.js'), parsed.baseUrl, adminAccessToken], {
     stdio: 'inherit',
     env: {
       ...process.env,
@@ -820,10 +944,15 @@ async function runPhonePadCommand(rawArgs) {
 export {
   DEFAULT_AUTO_RESERVED_SLOTS,
   describePlayerReservation,
+  generateControllerSessionToken,
   isDirectCliInvocation,
+  loadOrCreateControllerSessionToken,
   parseArgs,
   parseAutoReservedSlots,
   parsePlayerReservation,
+  publishControllerSessionToken,
+  readBootMarker,
+  resolveControllerSessionStatePath,
   resolveLayoutConfig
 };
 

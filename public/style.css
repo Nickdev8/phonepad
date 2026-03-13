@@ -1,13 +1,13 @@
 :root {
   --bg-start: #000;
   --bg-end: #000;
-  --panel: #1f3354;
-  --panel-alt: #2b4369;
-  --panel-active: #3f618f;
-  --stroke: #5d7aa8;
-  --stroke-strong: #9eb6d9;
-  --text: #f5f7fb;
-  --text-soft: #c8d5e9;
+  --panel: #121a2a;
+  --panel-alt: #18243a;
+  --panel-active: #243a60;
+  --stroke: #4a6fa7;
+  --stroke-strong: #d7efff;
+  --text: #f8fbff;
+  --text-soft: #95a9c5;
   --ok: #22c55e;
   --warn: #f59e0b;
   --danger: #ef4444;
@@ -98,7 +98,7 @@ body[data-feedback='strong']::after {
   max-height: var(--app-height, 100dvh);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 0.75rem;
+  gap: 0.55rem;
   padding-top: max(0.7rem, env(safe-area-inset-top));
   padding-right: max(0.7rem, env(safe-area-inset-right));
   padding-bottom: max(0.9rem, calc(env(safe-area-inset-bottom) + 0.35rem));
@@ -108,6 +108,12 @@ body[data-feedback='strong']::after {
 .app.landscape-compact {
   position: relative;
   gap: 0.45rem;
+}
+
+.app.tab-inactive .controller,
+.app.tab-inactive .extras {
+  opacity: 0.32;
+  pointer-events: none;
 }
 
 .top {
@@ -195,7 +201,7 @@ body[data-feedback='strong']::after {
 .retry-btn {
   border: 2px solid var(--stroke);
   border-radius: 0.6rem;
-  background: var(--panel);
+  background: rgba(19, 28, 43, 0.96);
   color: var(--text);
   font-size: 0.84rem;
   font-weight: 700;
@@ -209,9 +215,9 @@ body[data-feedback='strong']::after {
 .controller {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.8rem;
-  align-items: center;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 1rem;
+  align-items: stretch;
 }
 
 .dpad,
@@ -221,14 +227,26 @@ body[data-feedback='strong']::after {
 }
 
 .dpad {
-  width: min(72vw, 360px);
+  position: relative;
+  isolation: isolate;
+  width: min(82vw, 430px);
   max-width: 100%;
   margin: 0 auto;
   aspect-ratio: 1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: 0.48rem;
+}
+
+.dpad::before {
+  content: '';
+  position: absolute;
+  inset: 4%;
+  border-radius: 28%;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(64, 132, 219, 0.18), rgba(0, 0, 0, 0) 52%),
+    linear-gradient(180deg, rgba(14, 22, 34, 0.96), rgba(6, 10, 16, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(105, 153, 227, 0.18),
+    0 0 0 1px rgba(37, 66, 112, 0.22);
+  pointer-events: none;
 }
 
 .dpad.smooth-host {
@@ -240,9 +258,11 @@ body[data-feedback='strong']::after {
 .actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: 0.9rem;
   align-content: center;
   justify-items: center;
+  width: min(100%, 540px);
+  margin: 0 auto;
 }
 
 .extras {
@@ -252,64 +272,174 @@ body[data-feedback='strong']::after {
 }
 
 .control-btn {
-  border: 2px solid var(--stroke);
-  background: var(--panel);
-  color: var(--text);
+  --btn-surface: linear-gradient(180deg, rgba(29, 44, 70, 0.96), rgba(13, 21, 34, 0.98));
+  --btn-surface-active: linear-gradient(180deg, rgba(43, 67, 107, 1), rgba(23, 36, 58, 1));
+  --btn-border: var(--stroke);
+  --btn-border-active: var(--stroke-strong);
+  --btn-glow: rgba(90, 129, 194, 0.18);
+  --btn-glow-active: rgba(145, 196, 255, 0.28);
+  --btn-text: var(--text);
+  --btn-transform: none;
+  --btn-transform-active: translateY(2px) scale(0.985);
+  position: relative;
+  z-index: 1;
+  border: 2px solid var(--btn-border);
+  background: var(--btn-surface);
+  color: var(--btn-text);
   border-radius: 0.9rem;
   min-height: 3.4rem;
   width: 100%;
-  font-size: clamp(0.9rem, 2.1vh, 1.08rem);
+  font-size: clamp(1rem, 2.5vh, 1.2rem);
   font-weight: 800;
   line-height: 1;
   text-transform: none;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  transform: var(--btn-transform);
+  box-shadow:
+    0 0 0 0.16rem var(--btn-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition:
     transform 90ms ease,
     background-color 90ms ease,
-    border-color 90ms ease;
+    border-color 90ms ease,
+    box-shadow 90ms ease;
 }
 
 .control-btn.active {
-  background: var(--panel-active);
-  border-color: var(--stroke-strong);
-  transform: translateY(1px) scale(0.985);
+  background: var(--btn-surface-active);
+  border-color: var(--btn-border-active);
+  transform: var(--btn-transform-active);
+  box-shadow:
+    0 0 0 0.22rem var(--btn-glow-active),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.dpad-btn {
+  position: absolute;
+  padding: 0;
+  font-size: clamp(1.5rem, 4.5vh, 2.4rem);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #f3f9ff;
+  --btn-surface: linear-gradient(180deg, rgba(25, 42, 68, 0.98), rgba(10, 18, 30, 0.98));
+  --btn-surface-active: linear-gradient(180deg, rgba(44, 83, 142, 1), rgba(18, 35, 62, 1));
+  --btn-border: #60a5fa;
+  --btn-border-active: #d7efff;
+  --btn-glow: rgba(96, 165, 250, 0.2);
+  --btn-glow-active: rgba(125, 211, 252, 0.28);
 }
 
 .dpad-btn[data-slot='up'] {
-  grid-column: 2;
-  grid-row: 1;
+  top: 2%;
+  left: 50%;
+  width: 62%;
+  height: 46%;
+  clip-path: polygon(50% 0, 100% 38%, 74% 38%, 74% 100%, 26% 100%, 26% 38%, 0 38%);
+  --btn-transform: translateX(-50%);
+  --btn-transform-active: translateX(-50%) scale(0.985);
 }
 
 .dpad-btn[data-slot='left'] {
-  grid-column: 1;
-  grid-row: 2;
+  top: 50%;
+  left: 2%;
+  width: 46%;
+  height: 62%;
+  clip-path: polygon(0 50%, 38% 0, 38% 26%, 100% 26%, 100% 74%, 38% 74%, 38% 100%);
+  --btn-transform: translateY(-50%);
+  --btn-transform-active: translateY(-50%) scale(0.985);
 }
 
 .dpad-btn[data-slot='right'] {
-  grid-column: 3;
-  grid-row: 2;
+  top: 50%;
+  right: 2%;
+  width: 46%;
+  height: 62%;
+  clip-path: polygon(0 26%, 62% 26%, 62% 0, 100% 50%, 62% 100%, 62% 74%, 0 74%);
+  --btn-transform: translateY(-50%);
+  --btn-transform-active: translateY(-50%) scale(0.985);
 }
 
 .dpad-btn[data-slot='down'] {
-  grid-column: 2;
-  grid-row: 3;
+  bottom: 2%;
+  left: 50%;
+  width: 62%;
+  height: 46%;
+  clip-path: polygon(26% 0, 74% 0, 74% 62%, 100% 62%, 50% 100%, 0 62%, 26% 62%);
+  --btn-transform: translateX(-50%);
+  --btn-transform-active: translateX(-50%) scale(0.985);
+}
+
+.dpad-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 21%;
+  height: 21%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(73, 118, 184, 0.28), rgba(7, 11, 18, 0.98) 70%);
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.2),
+    0 0 0 0.22rem rgba(13, 22, 36, 0.95);
+  z-index: 4;
 }
 
 .action-btn {
-  width: min(100%, 170px);
+  width: 100%;
+  max-width: 100%;
   aspect-ratio: 1;
-  border-radius: 999px;
+  min-height: 0;
+  border-radius: 34%;
+  font-size: clamp(1.45rem, 3.1vh, 1.9rem);
+  letter-spacing: 0.04em;
+}
+
+.action-btn[data-key='A'] {
+  --btn-surface: radial-gradient(circle at 35% 28%, rgba(86, 247, 170, 0.38), rgba(17, 51, 38, 0.98) 46%, rgba(7, 14, 11, 0.98) 100%);
+  --btn-surface-active: radial-gradient(circle at 35% 28%, rgba(152, 255, 210, 0.55), rgba(25, 95, 63, 1) 48%, rgba(10, 21, 16, 1) 100%);
+  --btn-border: #4ade80;
+  --btn-border-active: #dcfce7;
+  --btn-glow: rgba(74, 222, 128, 0.22);
+  --btn-glow-active: rgba(134, 239, 172, 0.34);
+}
+
+.action-btn[data-key='B'] {
+  --btn-surface: radial-gradient(circle at 35% 28%, rgba(255, 158, 132, 0.34), rgba(74, 24, 24, 0.98) 44%, rgba(18, 8, 8, 0.98) 100%);
+  --btn-surface-active: radial-gradient(circle at 35% 28%, rgba(255, 205, 181, 0.55), rgba(118, 39, 39, 1) 48%, rgba(27, 10, 10, 1) 100%);
+  --btn-border: #fb7185;
+  --btn-border-active: #ffe4e6;
+  --btn-glow: rgba(251, 113, 133, 0.22);
+  --btn-glow-active: rgba(253, 164, 175, 0.34);
+}
+
+.action-btn[data-key='X'] {
+  --btn-surface: radial-gradient(circle at 35% 28%, rgba(125, 232, 255, 0.34), rgba(19, 54, 73, 0.98) 44%, rgba(7, 14, 19, 0.98) 100%);
+  --btn-surface-active: radial-gradient(circle at 35% 28%, rgba(204, 246, 255, 0.52), rgba(28, 92, 120, 1) 48%, rgba(10, 18, 25, 1) 100%);
+  --btn-border: #38bdf8;
+  --btn-border-active: #e0f2fe;
+  --btn-glow: rgba(56, 189, 248, 0.22);
+  --btn-glow-active: rgba(125, 211, 252, 0.34);
+}
+
+.action-btn[data-key='Y'] {
+  --btn-surface: radial-gradient(circle at 35% 28%, rgba(255, 223, 114, 0.34), rgba(77, 58, 16, 0.98) 44%, rgba(17, 13, 6, 0.98) 100%);
+  --btn-surface-active: radial-gradient(circle at 35% 28%, rgba(255, 244, 179, 0.55), rgba(123, 94, 22, 1) 48%, rgba(24, 17, 6, 1) 100%);
+  --btn-border: #facc15;
+  --btn-border-active: #fef9c3;
+  --btn-glow: rgba(250, 204, 21, 0.22);
+  --btn-glow-active: rgba(253, 224, 71, 0.34);
 }
 
 .smooth-stick {
   position: relative;
-  width: min(72vw, 360px);
-  height: min(72vw, 360px);
+  width: min(82vw, 430px);
+  height: min(82vw, 430px);
   max-width: 100%;
   border-radius: 999px;
   border: 2px solid var(--stroke);
-  background: #22385b;
+  background: #16253d;
   touch-action: none;
 }
 
@@ -381,22 +511,19 @@ body[data-feedback='strong']::after {
 @media (orientation: portrait) {
   .controller {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
-    justify-items: center;
+    grid-template-rows: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    justify-items: stretch;
+    align-content: stretch;
   }
 
   .dpad,
   .smooth-stick {
-    width: min(62vw, 320px);
-    height: min(62vw, 320px);
+    width: min(88vw, 450px);
+    height: min(88vw, 450px);
   }
 
   .actions {
-    width: min(100%, 390px);
-  }
-
-  .action-btn {
-    width: min(100%, 150px);
+    width: min(100%, 94vw);
   }
 }
 
@@ -422,17 +549,17 @@ body[data-feedback='strong']::after {
   }
 
   .controller {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
   }
 
   .dpad,
   .smooth-stick {
-    width: min(62vh, 360px);
-    height: min(62vh, 360px);
+    width: min(54vh, 430px);
+    height: min(54vh, 430px);
   }
 
   .actions {
-    width: min(100%, 380px);
+    width: min(100%, 760px);
   }
 }
 
@@ -451,8 +578,8 @@ body[data-feedback='strong']::after {
 @media (orientation: portrait) {
   .app.ios-browser .dpad,
   .app.ios-browser .smooth-stick {
-    width: min(58vw, 300px);
-    height: min(58vw, 300px);
+    width: min(82vw, 400px);
+    height: min(82vw, 400px);
   }
 }
 
@@ -465,11 +592,11 @@ body[data-feedback='strong']::after {
 
   .app.ios-browser .dpad,
   .app.ios-browser .smooth-stick {
-    width: min(56vh, 320px);
-    height: min(56vh, 320px);
+    width: min(50vh, 390px);
+    height: min(50vh, 390px);
   }
 
   .app.ios-browser .actions {
-    width: min(100%, 340px);
+    width: min(100%, 700px);
   }
 }

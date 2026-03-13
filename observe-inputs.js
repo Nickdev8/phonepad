@@ -73,12 +73,25 @@ function toObserveUrl(baseUrl, token) {
   return url.toString();
 }
 
+function redactTokenInUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.searchParams.has('token')) {
+      url.searchParams.set('token', 'REDACTED');
+    }
+
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 const env = loadDotEnv(path.join(__dirname, '.env'));
 const baseUrl = process.argv[2] || process.env.PAD_URL || env.PHONEPAD_PUBLIC_URL;
 const token = process.argv[3] || process.env.PAD_TOKEN || env.PHONEPAD_ACCESS_TOKEN;
 
-if (!baseUrl || !token) {
-  console.error('Usage: node observe-inputs.js <base_url> <token>');
+if (!baseUrl) {
+  console.error('Usage: node observe-inputs.js <base_url> [admin_token]');
   console.error('Or set PAD_URL/PAD_TOKEN or PHONEPAD_PUBLIC_URL/PHONEPAD_ACCESS_TOKEN in .env');
   process.exit(1);
 }
@@ -95,7 +108,7 @@ const lastStateByPlayer = new Map();
 const ws = new WebSocket(observeUrl);
 
 ws.on('open', () => {
-  console.log(`listening on ${observeUrl}`);
+  console.log(`listening on ${redactTokenInUrl(observeUrl)}`);
 });
 
 ws.on('message', (payload) => {
