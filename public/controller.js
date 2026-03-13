@@ -211,8 +211,15 @@ function isLandscapeViewport() {
   return width > height;
 }
 
+function isCompactLandscapeViewport() {
+  const viewport = window.visualViewport;
+  const width = viewport?.width ?? window.innerWidth;
+  const height = viewport?.height ?? window.innerHeight;
+  return width > height && Math.min(width, height) < 560;
+}
+
 function syncTopChrome() {
-  const landscapeCompact = isLandscapeViewport();
+  const landscapeCompact = isCompactLandscapeViewport();
 
   appElement.classList.toggle('landscape-compact', landscapeCompact);
 
@@ -221,6 +228,7 @@ function syncTopChrome() {
   }
 
   syncDeviceNoteVisibility();
+  syncViewportMetrics();
 }
 
 function getFullscreenElement() {
@@ -712,8 +720,79 @@ function triggerHaptic(intensity = 'light') {
 }
 
 function syncViewportMetrics() {
+  const viewportWidth = Math.round(window.visualViewport?.width ?? window.innerWidth);
   const viewportHeight = Math.round(window.visualViewport?.height ?? window.innerHeight);
+  const landscape = viewportWidth > viewportHeight;
+  const landscapeCompact = isCompactLandscapeViewport();
+  const topHeight = Math.ceil(topElement?.getBoundingClientRect().height ?? 0);
+  const shortestSide = Math.min(viewportWidth, viewportHeight);
+  const gap = Math.max(10, Math.min(20, Math.round(shortestSide * 0.024)));
+  const availableWidth = Math.max(220, viewportWidth - 24);
+  const availableHeight = Math.max(
+    220,
+    viewportHeight - 24 - (landscapeCompact ? 0 : topHeight)
+  );
+
+  let dpadSize;
+  let actionSize;
+
+  if (landscape) {
+    dpadSize = Math.max(
+      140,
+      Math.min(
+        availableWidth * (landscapeCompact ? 0.36 : 0.34),
+        availableHeight * (landscapeCompact ? 0.88 : 0.72),
+        520
+      )
+    );
+
+    const actionAreaWidth = Math.max(140, availableWidth - dpadSize - gap);
+    actionSize = Math.max(
+      64,
+      Math.min(
+        (actionAreaWidth - gap) / 2,
+        (availableHeight - gap) / 2,
+        landscapeCompact ? 220 : 280
+      )
+    );
+  } else {
+    dpadSize = Math.max(
+      180,
+      Math.min(
+        availableWidth * 0.94,
+        availableHeight * 0.5,
+        520
+      )
+    );
+
+    const actionAreaHeight = Math.max(140, availableHeight - dpadSize - gap);
+    actionSize = Math.max(
+      78,
+      Math.min(
+        (availableWidth - gap) / 2,
+        (actionAreaHeight - gap) / 2,
+        280
+      )
+    );
+  }
+
+  const actionsWidth = actionSize * 2 + gap;
+  const controllerMaxWidth = landscape
+    ? Math.min(availableWidth, dpadSize + actionsWidth + gap)
+    : Math.min(availableWidth, Math.max(dpadSize, actionsWidth));
+
   document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
+  document.documentElement.style.setProperty('--app-width', `${viewportWidth}px`);
+  document.documentElement.style.setProperty('--top-height', `${topHeight}px`);
+  document.documentElement.style.setProperty('--control-gap', `${gap}px`);
+  document.documentElement.style.setProperty('--dpad-size', `${Math.round(dpadSize)}px`);
+  document.documentElement.style.setProperty('--action-size', `${Math.round(actionSize)}px`);
+  document.documentElement.style.setProperty('--actions-width', `${Math.round(actionsWidth)}px`);
+  document.documentElement.style.setProperty('--controller-max-width', `${Math.round(controllerMaxWidth)}px`);
+  document.documentElement.style.setProperty(
+    '--controller-top-clearance',
+    `${landscapeCompact ? Math.min(topHeight + 6, Math.max(0, viewportHeight * 0.22)) : 0}px`
+  );
 }
 
 function clearRetryTimers() {
