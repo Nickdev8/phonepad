@@ -12,6 +12,7 @@ const dotenvPath = path.join(__dirname, '.env');
 const DEBUG_ENABLED = parseDebugFlag(
   process.env.PAD_DEBUG || process.env.PHONEPAD_DEBUG || ''
 );
+let notifySendFailed = false;
 
 function loadDotEnv(filePath) {
   const loaded = {};
@@ -92,6 +93,21 @@ function debugLog(message) {
   console.error(`[debug] ${message}`);
 }
 
+function sendDebugNotification(title, body) {
+  if (!DEBUG_ENABLED || notifySendFailed) {
+    return;
+  }
+
+  const child = spawn('notify-send', ['-a', 'PhonePad', title, body], {
+    stdio: 'ignore'
+  });
+
+  child.on('error', () => {
+    notifySendFailed = true;
+    debugLog('notify-send is unavailable; desktop notifications disabled');
+  });
+}
+
 const lastDebugStateSummaryByPlayer = new Map();
 
 function summarizeState(state) {
@@ -131,6 +147,7 @@ function debugBridgeMessage(message) {
 
     lastDebugStateSummaryByPlayer.set(playerId, nextSummary);
     debugLog(`bridge state player=${playerId} ${nextSummary}`);
+    sendDebugNotification('PhonePad input', `player=${playerId} ${nextSummary}`);
     return;
   }
 

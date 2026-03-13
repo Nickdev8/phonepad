@@ -1,6 +1,6 @@
 :root {
-  --bg-start: #0b1220;
-  --bg-end: #16263f;
+  --bg-start: #000;
+  --bg-end: #000;
   --panel: #1f3354;
   --panel-alt: #2b4369;
   --panel-active: #3f618f;
@@ -27,7 +27,7 @@ html {
   min-height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: linear-gradient(155deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  background: #000;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -45,7 +45,7 @@ body {
 body {
   font-family: 'Avenir Next', 'Futura', 'Trebuchet MS', sans-serif;
   color: var(--text);
-  background: linear-gradient(155deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  background: #000;
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -112,14 +112,9 @@ body[data-feedback='strong']::after {
 
 .top {
   display: grid;
-  gap: 0.3rem;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(1.05rem, 2.2vh, 1.35rem);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
 }
 
 .status,
@@ -127,69 +122,47 @@ h1 {
   margin: 0;
   font-size: clamp(0.83rem, 1.8vh, 0.96rem);
   font-weight: 700;
+  display: none;
 }
 
 .connection-badges {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2rem;
 }
 
 .connection-badge {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 2rem;
-  padding: 0.28rem 0.72rem;
-  border: 1px solid var(--stroke);
-  border-radius: 999px;
-  background: rgba(31, 51, 84, 0.88);
-  color: var(--text-soft);
-  font-size: clamp(0.76rem, 1.65vh, 0.9rem);
-  font-weight: 800;
-  letter-spacing: 0.01em;
-}
-
-.connection-badge::before {
-  content: '';
-  width: 0.58rem;
-  height: 0.58rem;
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
   background: var(--warn);
-  box-shadow: 0 0 0 0.16rem rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 0 0.18rem rgba(245, 158, 11, 0.16);
 }
 
 .connection-badge.connected {
-  color: var(--text);
-  border-color: rgba(34, 197, 94, 0.45);
-}
-
-.connection-badge.connected::before {
   background: var(--ok);
-  box-shadow: 0 0 0 0.16rem rgba(34, 197, 94, 0.18);
+  box-shadow: 0 0 0 0.18rem rgba(34, 197, 94, 0.16);
 }
 
-.connection-badge.connecting::before,
-.connection-badge.retrying::before,
-.connection-badge.waiting::before {
+.connection-badge.connecting,
+.connection-badge.retrying,
+.connection-badge.waiting {
   background: var(--warn);
-  box-shadow: 0 0 0 0.16rem rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 0 0.18rem rgba(245, 158, 11, 0.16);
 }
 
-.connection-badge.disconnected::before,
-.connection-badge.error::before {
+.connection-badge.disconnected,
+.connection-badge.error {
   background: var(--danger);
-  box-shadow: 0 0 0 0.16rem rgba(239, 68, 68, 0.18);
-}
-
-.layout-info {
-  color: var(--text-soft);
-  letter-spacing: 0.01em;
+  box-shadow: 0 0 0 0.18rem rgba(239, 68, 68, 0.16);
 }
 
 .device-note {
   margin: 0;
+  grid-column: 1 / -1;
   color: var(--text-soft);
   font-size: clamp(0.78rem, 1.75vh, 0.92rem);
   line-height: 1.35;
@@ -216,6 +189,7 @@ h1 {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-self: end;
 }
 
 .retry-btn {
@@ -433,19 +407,18 @@ h1 {
     right: max(0.55rem, env(safe-area-inset-right));
     left: max(0.55rem, env(safe-area-inset-left));
     z-index: 5;
-    display: flex;
-    justify-content: flex-end;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
     pointer-events: none;
   }
 
-  .app.landscape-compact .top > :not(.top-actions) {
-    display: none;
+  .app.landscape-compact .connection-badges,
+  .app.landscape-compact .top-actions {
+    pointer-events: auto;
   }
 
-  .app.landscape-compact .top-actions {
-    margin-left: auto;
-    pointer-events: auto;
-    justify-content: flex-end;
+  .app.landscape-compact .device-note {
+    display: none;
   }
 
   .controller {

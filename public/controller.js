@@ -3,6 +3,7 @@ const serverConnectionElement = document.getElementById('server-connection');
 const laptopConnectionElement = document.getElementById('laptop-connection');
 const layoutInfoElement = document.getElementById('layout-info');
 const deviceNoteElement = document.getElementById('device-note');
+const fullscreenButton = document.getElementById('fullscreen-toggle');
 const reconnectButton = document.getElementById('reconnect-now');
 const topElement = document.querySelector('.top');
 const appElement = document.querySelector('.app');
@@ -164,6 +165,10 @@ function syncRuntimeEnvironment() {
   appElement.classList.toggle('ios-standalone', isAppleMobile && standaloneMode);
 }
 
+function hasVisibleTopActions() {
+  return !reconnectButton.hidden || !fullscreenButton.hidden;
+}
+
 function isLandscapeViewport() {
   const viewport = window.visualViewport;
   const width = viewport?.width ?? window.innerWidth;
@@ -173,12 +178,11 @@ function isLandscapeViewport() {
 
 function syncTopChrome() {
   const landscapeCompact = isLandscapeViewport();
-  const hasTopActions = !reconnectButton.hidden;
 
   appElement.classList.toggle('landscape-compact', landscapeCompact);
 
   if (topElement) {
-    topElement.hidden = landscapeCompact && !hasTopActions;
+    topElement.hidden = false;
   }
 
   syncDeviceNoteVisibility();
@@ -199,6 +203,18 @@ function supportsFullscreenMode() {
 
 function shouldAutoEnterAndroidFullscreen() {
   return isAndroidPhone && !standaloneMode && supportsFullscreenMode();
+}
+
+function shouldShowAndroidFullscreenButton() {
+  return shouldAutoEnterAndroidFullscreen() && !getFullscreenElement();
+}
+
+function syncFullscreenButton() {
+  if (!fullscreenButton) {
+    return;
+  }
+
+  fullscreenButton.hidden = !shouldShowAndroidFullscreenButton();
 }
 
 async function tryEnterAndroidFullscreen() {
@@ -228,6 +244,7 @@ async function tryEnterAndroidFullscreen() {
     }
   } finally {
     fullscreenRequestInFlight = false;
+    syncFullscreenButton();
     syncViewportMetrics();
     syncTopChrome();
   }
@@ -342,6 +359,10 @@ function getControlLabel(key) {
 }
 
 function setStatus(text, type) {
+  if (!statusElement) {
+    return;
+  }
+
   statusElement.textContent = text;
   statusElement.className = `status ${type}`;
 }
@@ -351,8 +372,9 @@ function setConnectionBadge(element, state, text) {
     return;
   }
 
-  element.textContent = text;
   element.className = `connection-badge ${state}`;
+  element.setAttribute('aria-label', text);
+  element.setAttribute('title', text);
 }
 
 function setServerConnectionState(state) {
@@ -1214,6 +1236,10 @@ reconnectButton.addEventListener('click', () => {
   connectWebSocket();
 });
 
+fullscreenButton?.addEventListener('click', async () => {
+  await tryEnterAndroidFullscreen();
+});
+
 window.addEventListener('offline', () => {
   clearRetryTimers();
   setReconnectVisible(true);
@@ -1236,18 +1262,22 @@ window.addEventListener('online', () => {
 });
 
 window.addEventListener('resize', () => {
+  syncFullscreenButton();
   syncViewportMetrics();
   syncTopChrome();
 });
 window.addEventListener('orientationchange', () => {
+  syncFullscreenButton();
   syncViewportMetrics();
   syncTopChrome();
 });
 window.addEventListener('fullscreenchange', () => {
+  syncFullscreenButton();
   syncViewportMetrics();
   syncTopChrome();
 });
 window.addEventListener('webkitfullscreenchange', () => {
+  syncFullscreenButton();
   syncViewportMetrics();
   syncTopChrome();
 });
@@ -1263,6 +1293,7 @@ if (window.visualViewport) {
 const standaloneQuery = window.matchMedia?.('(display-mode: standalone)');
 standaloneQuery?.addEventListener?.('change', () => {
   updateDeviceNote();
+  syncFullscreenButton();
   syncViewportMetrics();
   syncTopChrome();
 });
@@ -1280,6 +1311,7 @@ document.addEventListener('pointerup', handleAndroidFullscreenGesture, { passive
 
 setInterval(sendState, KEEPALIVE_INTERVAL_MS);
 syncRuntimeEnvironment();
+syncFullscreenButton();
 syncViewportMetrics();
 setLayoutInfo();
 updateDeviceNote();

@@ -18,15 +18,25 @@
   <body>
     <main class="app">
       <header class="top">
-        <h1>PhonePad</h1>
-        <p id="status" class="status connecting">connecting...</p>
         <div class="connection-badges" aria-live="polite">
-          <p id="server-connection" class="connection-badge connecting">Server: connecting</p>
-          <p id="laptop-connection" class="connection-badge waiting">Laptop: waiting</p>
+          <span
+            id="server-connection"
+            class="connection-badge connecting"
+            role="status"
+            aria-label="Server: connecting"
+            title="Server: connecting"
+          ></span>
+          <span
+            id="laptop-connection"
+            class="connection-badge waiting"
+            role="status"
+            aria-label="Laptop: waiting"
+            title="Laptop: waiting"
+          ></span>
         </div>
-        <p id="layout-info" class="layout-info">loading layout...</p>
         <p id="device-note" class="device-note" hidden></p>
         <div class="top-actions">
+          <button id="fullscreen-toggle" class="retry-btn" type="button" hidden>Fullscreen</button>
           <button id="reconnect-now" class="retry-btn" type="button" hidden>Reconnect now</button>
         </div>
       </header>
