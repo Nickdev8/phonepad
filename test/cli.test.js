@@ -11,7 +11,7 @@ import {
   loadOrCreateControllerSessionToken,
   parseArgs,
   parsePlayerReservation
-} from './cli.js';
+} from '../bin/phonepad.js';
 
 const DEFAULT_PARSE_ARGS_OPTIONS = Object.freeze({
   debug: false,
@@ -29,7 +29,7 @@ const DEFAULT_PARSE_ARGS_OPTIONS = Object.freeze({
   usedHapticsOverride: false,
   presetExplicitlySet: false
 });
-const CLI_FILENAME = fileURLToPath(new URL('./cli.js', import.meta.url));
+const CLI_FILENAME = fileURLToPath(new URL('../bin/phonepad.js', import.meta.url));
 
 test('parsePlayerReservation defaults auto mode to a stable pool', () => {
   assert.deepEqual(parsePlayerReservation('auto'), {

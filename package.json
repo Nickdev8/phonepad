@@ -4,12 +4,13 @@
   "description": "Minimal smartphone game controller over local Wi-Fi",
   "type": "module",
   "bin": {
-    "phonepad": "./cli.js"
+    "phonepad": "./bin/phonepad.js"
   },
   "scripts": {
-    "start": "node server.js",
-    "observe": "node observe-inputs.js",
-    "client": "node cli.js",
+    "client": "node bin/phonepad.js",
+    "observe": "node scripts/observe-inputs.js",
+    "server": "node src/server.js",
+    "start": "node src/server.js",
     "test": "node --test"
   },
   "dependencies": {

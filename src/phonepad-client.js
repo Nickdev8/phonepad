@@ -8,7 +8,7 @@ import WebSocket from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dotenvPath = path.join(__dirname, '.env');
+const dotenvPath = path.join(__dirname, '..', '.env');
 const DEBUG_ENABLED = parseDebugFlag(
   process.env.PAD_DEBUG || process.env.PHONEPAD_DEBUG || ''
 );
@@ -197,7 +197,7 @@ let publishedLayout = false;
 let layoutUrl = '';
 
 if (!baseUrl) {
-  console.error('Usage: node client.js <base_url> [admin_token]');
+  console.error('Usage: node src/phonepad-client.js <base_url> [admin_token]');
   console.error('Or set PAD_URL/PAD_TOKEN or PHONEPAD_PUBLIC_URL/PHONEPAD_ACCESS_TOKEN in .env');
   process.exit(1);
 }
@@ -211,7 +211,7 @@ try {
   process.exit(1);
 }
 
-const bridge = spawn('python3', [path.join(__dirname, 'virtual-gamepad.py')], {
+const bridge = spawn('python3', [path.join(__dirname, '..', 'scripts', 'virtual-gamepad.py')], {
   stdio: ['pipe', 'inherit', 'inherit']
 });
 debugLog(`spawned virtual bridge pid=${bridge.pid ?? 'unknown'}`);

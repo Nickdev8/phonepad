@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 3017
 
-CMD ["node", "--max-old-space-size=96", "server.js"]
+CMD ["node", "--max-old-space-size=96", "src/server.js"]

@@ -86,12 +86,12 @@ function redactTokenInUrl(rawUrl) {
   }
 }
 
-const env = loadDotEnv(path.join(__dirname, '.env'));
+const env = loadDotEnv(path.join(__dirname, '..', '.env'));
 const baseUrl = process.argv[2] || process.env.PAD_URL || env.PHONEPAD_PUBLIC_URL;
 const token = process.argv[3] || process.env.PAD_TOKEN || env.PHONEPAD_ACCESS_TOKEN;
 
 if (!baseUrl) {
-  console.error('Usage: node observe-inputs.js <base_url> [admin_token]');
+  console.error('Usage: node scripts/observe-inputs.js <base_url> [admin_token]');
   console.error('Or set PAD_URL/PAD_TOKEN or PHONEPAD_PUBLIC_URL/PHONEPAD_ACCESS_TOKEN in .env');
   process.exit(1);
 }

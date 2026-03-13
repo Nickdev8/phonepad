@@ -262,7 +262,7 @@ export function startPhonePadServer({
   };
 
   app.use(express.json({ limit: '16kb' }));
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.static(path.join(__dirname, '..', 'public')));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });

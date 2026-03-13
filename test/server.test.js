@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
-import { startPhonePadServer } from './server.js';
+import { startPhonePadServer } from '../src/server.js';
 
 function getBoundBaseUrl(server) {
   const address = server.address();
