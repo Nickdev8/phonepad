@@ -11,6 +11,7 @@ const appElement = document.querySelector('.app');
 const dpadElement = document.getElementById('dpad');
 const actionsElement = document.getElementById('actions');
 const extrasElement = document.getElementById('extras');
+const utilityTogglesElement = document.getElementById('utility-toggles');
 
 const DEVICE_STORAGE_KEY = 'phonepad_device_id';
 const TOKEN_STORAGE_KEY = 'phonepad_session_token';
@@ -349,6 +350,7 @@ function setTabOwnershipState(isOwner) {
   if (tabOwnsController === isOwner) {
     appElement.classList.toggle('tab-inactive', !isOwner);
     takeControlButton.hidden = isOwner;
+    syncLockButtonInteractivity();
     syncTopChrome();
     return;
   }
@@ -356,6 +358,7 @@ function setTabOwnershipState(isOwner) {
   tabOwnsController = isOwner;
   appElement.classList.toggle('tab-inactive', !isOwner);
   takeControlButton.hidden = isOwner;
+  syncLockButtonInteractivity();
 
   if (!isOwner) {
     closeControllerSocket();
@@ -993,6 +996,15 @@ function registerButtonForKey(map, key, button) {
   map.set(key, existing);
 }
 
+function syncLockButtonInteractivity() {
+  const disabled = !tabOwnsController || !controlsReady;
+  for (const buttons of lockButtonsByKey.values()) {
+    for (const button of buttons) {
+      button.disabled = disabled;
+    }
+  }
+}
+
 function syncButtonVisuals(key) {
   const actionButtons = actionButtonsByKey.get(key) ?? [];
   for (const button of actionButtons) {
@@ -1185,7 +1197,7 @@ function createControlButton(key, dpadSlot = '') {
 function createToggleButton(toggle) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'control-btn toggle-btn';
+  button.className = 'control-btn toggle-btn header-toggle-btn';
   button.dataset.key = toggle.key;
 
   const title = document.createElement('span');
@@ -1198,11 +1210,17 @@ function createToggleButton(toggle) {
 
   button.append(title, description);
   button.setAttribute('aria-label', toggle.label);
+  button.setAttribute('title', toggle.description);
   registerButtonForKey(lockButtonsByKey, toggle.key, button);
   syncButtonVisuals(toggle.key);
+  syncLockButtonInteractivity();
 
   button.addEventListener('click', (event) => {
     event.preventDefault();
+    if (!tabOwnsController || !controlsReady) {
+      return;
+    }
+
     toggleLockedButton(toggle.key);
   });
   button.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -1408,6 +1426,7 @@ function renderControls() {
   dpadElement.innerHTML = '';
   actionsElement.innerHTML = '';
   extrasElement.innerHTML = '';
+  utilityTogglesElement.innerHTML = '';
 
   const hasDirections = DIRECTION_KEYS.some((direction) => Boolean(directionKeys[direction]));
   if (controllerConfig.joystickMode === 'dpad' && hasDirections) {
@@ -1460,9 +1479,10 @@ function renderControls() {
       continue;
     }
 
-    extrasElement.appendChild(createToggleButton(toggle));
+    utilityTogglesElement.appendChild(createToggleButton(toggle));
   }
 
+  utilityTogglesElement.hidden = utilityTogglesElement.children.length === 0;
   extrasElement.hidden = extrasElement.children.length === 0;
   dpadElement.hidden = dpadElement.children.length === 0;
   actionsElement.hidden = actionsElement.children.length === 0;
@@ -1601,6 +1621,7 @@ async function initController() {
   syncTopChrome();
 
   controlsReady = true;
+  syncLockButtonInteractivity();
   retryAttempts = 0;
   connectWebSocket();
 }

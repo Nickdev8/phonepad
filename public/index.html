@@ -18,21 +18,24 @@
   <body>
     <main class="app">
       <header class="top">
-        <div class="connection-badges" aria-live="polite">
-          <span
-            id="server-connection"
-            class="connection-badge connecting"
-            role="status"
-            aria-label="Server: connecting"
-            title="Server: connecting"
-          ></span>
-          <span
-            id="laptop-connection"
-            class="connection-badge waiting"
-            role="status"
-            aria-label="Laptop: waiting"
-            title="Laptop: waiting"
-          ></span>
+        <div class="top-status">
+          <div class="connection-badges" aria-live="polite">
+            <span
+              id="server-connection"
+              class="connection-badge connecting"
+              role="status"
+              aria-label="Server: connecting"
+              title="Server: connecting"
+            ></span>
+            <span
+              id="laptop-connection"
+              class="connection-badge waiting"
+              role="status"
+              aria-label="Laptop: waiting"
+              title="Laptop: waiting"
+            ></span>
+          </div>
+          <div id="utility-toggles" class="utility-toggles" hidden></div>
         </div>
         <p id="device-note" class="device-note" hidden></p>
         <div class="top-actions">

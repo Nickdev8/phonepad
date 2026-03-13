@@ -130,6 +130,14 @@ body[data-feedback='strong']::after {
   gap: 0.4rem 0.6rem;
 }
 
+.top-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .status,
 .layout-info {
   margin: 0;
@@ -142,6 +150,13 @@ body[data-feedback='strong']::after {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  min-height: 2rem;
+}
+
+.utility-toggles {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
   min-height: 2rem;
 }
 
@@ -473,6 +488,42 @@ body[data-feedback='strong']::after {
   color: #efe9ff;
 }
 
+.header-toggle-btn {
+  --btn-surface: rgba(42, 37, 54, 0.58);
+  --btn-surface-active: rgba(58, 50, 75, 0.92);
+  --btn-border: rgba(143, 132, 175, 0.42);
+  --btn-border-active: rgba(236, 230, 255, 0.66);
+  width: auto;
+  min-height: 1.85rem;
+  border-radius: 999px;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0.22rem 0.62rem;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+
+.header-toggle-btn .toggle-btn-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.header-toggle-btn .toggle-btn-description {
+  display: none;
+}
+
+.header-toggle-btn.active .toggle-btn-title {
+  opacity: 1;
+}
+
+.header-toggle-btn:disabled {
+  opacity: 0.45;
+}
+
 .smooth-stick {
   position: relative;
   width: min(100%, var(--dpad-size));
@@ -603,7 +654,7 @@ body[data-feedback='strong']::after {
     pointer-events: none;
   }
 
-  .app.landscape-compact .connection-badges,
+  .app.landscape-compact .top-status,
   .app.landscape-compact .top-actions {
     pointer-events: auto;
   }
@@ -663,6 +714,11 @@ body[data-feedback='strong']::after {
 
   .connection-badges {
     min-height: 1.65rem;
+  }
+
+  .header-toggle-btn {
+    min-height: 1.6rem;
+    padding: 0.18rem 0.54rem;
   }
 
   .action-btn-labeled {
