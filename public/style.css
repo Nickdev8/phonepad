@@ -10,17 +10,17 @@
   --actions-width: 460px;
   --controller-max-width: 100%;
   --controller-top-clearance: 0px;
-  --panel: #181b21;
-  --panel-alt: #20252d;
-  --panel-active: #2a313c;
-  --stroke: #5f6876;
-  --stroke-strong: #aeb8c7;
-  --text: #f2f4f7;
-  --text-soft: #8a93a1;
-  --ok: #22c55e;
-  --warn: #f59e0b;
-  --danger: #ef4444;
-  --info: #7da0d6;
+  --panel: #17181b;
+  --panel-alt: #23262b;
+  --panel-active: #343942;
+  --stroke: #6a727f;
+  --stroke-strong: #d7dde6;
+  --text: #f3f1ec;
+  --text-soft: #9d978d;
+  --ok: #4fb86c;
+  --warn: #d8a140;
+  --danger: #d35d59;
+  --info: #7d95c0;
 }
 
 * {
@@ -67,7 +67,7 @@ body::after {
   inset: 0;
   pointer-events: none;
   opacity: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 244, 220, 0.06);
   transition: opacity 90ms ease;
 }
 
@@ -249,7 +249,7 @@ body[data-feedback='strong']::after {
   position: absolute;
   inset: 4%;
   border-radius: 28%;
-  background: #0f1116;
+  background: #101215;
   border: 1px solid rgba(255, 255, 255, 0.05);
   pointer-events: none;
 }
@@ -317,11 +317,11 @@ body[data-feedback='strong']::after {
   font-size: clamp(1.5rem, 4.5vh, 2.4rem);
   font-weight: 900;
   letter-spacing: 0.02em;
-  color: #f3f9ff;
-  --btn-surface: #283243;
-  --btn-surface-active: #3a475d;
-  --btn-border: #6f7e92;
-  --btn-border-active: #c8d1dc;
+  color: #f4f1ec;
+  --btn-surface: #2e343d;
+  --btn-surface-active: #434b57;
+  --btn-border: #808998;
+  --btn-border-active: #d7dde6;
 }
 
 .dpad-btn[data-slot='up'] {
@@ -372,7 +372,7 @@ body[data-feedback='strong']::after {
   height: 21%;
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  background: #11161d;
+  background: #171a20;
   border: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 4;
 }
@@ -388,31 +388,31 @@ body[data-feedback='strong']::after {
 }
 
 .action-btn[data-key='A'] {
-  --btn-surface: #244633;
-  --btn-surface-active: #2d5740;
-  --btn-border: #5f9276;
-  --btn-border-active: #b9d7c4;
+  --btn-surface: #2f5b4a;
+  --btn-surface-active: #3b705c;
+  --btn-border: #82ab98;
+  --btn-border-active: #d8e8e1;
 }
 
 .action-btn[data-key='B'] {
-  --btn-surface: #553336;
-  --btn-surface-active: #684042;
-  --btn-border: #9d7076;
-  --btn-border-active: #dec3c7;
+  --btn-surface: #744948;
+  --btn-surface-active: #8b5a58;
+  --btn-border: #bf8f8c;
+  --btn-border-active: #edd8d6;
 }
 
 .action-btn[data-key='X'] {
-  --btn-surface: #274251;
-  --btn-surface-active: #315165;
-  --btn-border: #6f93a8;
-  --btn-border-active: #c0d5df;
+  --btn-surface: #35586a;
+  --btn-surface-active: #426c82;
+  --btn-border: #88a9bb;
+  --btn-border-active: #d7e6ee;
 }
 
 .action-btn[data-key='Y'] {
-  --btn-surface: #534629;
-  --btn-surface-active: #655731;
-  --btn-border: #9d8d60;
-  --btn-border-active: #ddd1b2;
+  --btn-surface: #77663a;
+  --btn-surface-active: #8f7b45;
+  --btn-border: #bba46b;
+  --btn-border-active: #eadfbf;
 }
 
 .smooth-stick {
