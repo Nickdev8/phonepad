@@ -48,7 +48,7 @@ const LAYOUT_PRESETS = Object.freeze({
     category: 'game',
     description: 'Ultimate Chicken Horse profile',
     joystickMode: 'dpad',
-    buttons: ['A', 'B', 'X', 'Y']
+    buttons: ['A', 'B', 'X', 'Y', 'L1', 'R1']
   },
   'pico-park': {
     category: 'game',
@@ -196,6 +196,22 @@ function parsePlayerReservation(rawValue) {
   return parsePlayerReservationWithAutoSlots(rawValue, DEFAULT_AUTO_RESERVED_SLOTS);
 }
 
+function resolveMaxPlayersValueForPreset({
+  presetName,
+  maxPlayersValue,
+  usedMaxPlayersOverride
+}) {
+  if (usedMaxPlayersOverride) {
+    return maxPlayersValue;
+  }
+
+  if (resolvePresetName(presetName) === 'ultimate-chicken-horse') {
+    return 'adaptive';
+  }
+
+  return maxPlayersValue;
+}
+
 function parseAutoReservedSlots(rawValue) {
   const value = String(rawValue ?? '').trim();
   if (!value) {
@@ -213,7 +229,14 @@ function parseAutoReservedSlots(rawValue) {
 
 function parsePlayerReservationWithAutoSlots(rawValue, autoReservedSlots) {
   const value = String(rawValue ?? '').trim().toLowerCase();
-  if (!value || value === 'auto') {
+  if (!value) {
+    return {
+      mode: 'adaptive',
+      reservedSlots: 0
+    };
+  }
+
+  if (value === 'auto') {
     return {
       mode: 'auto',
       reservedSlots: autoReservedSlots
@@ -370,8 +393,8 @@ function printLayoutExamples() {
   console.log('  phonepad --preset arcade --haptics off');
   console.log('  phonepad --joystick smooth --buttons A,B,X,Y');
   console.log('  phonepad --joystick none --buttons A,B,START,SELECT');
-  console.log('  phonepad driving --players auto');
   console.log('  phonepad driving --players adaptive');
+  console.log('  phonepad driving --players auto');
   console.log('  phonepad driving --players 8');
   console.log('  phonepad --inputs throttle,brake,gearUp,gearDown');
   console.log('  phonepad ultimate-chicken-horse -d');
@@ -395,7 +418,7 @@ function printUsage() {
 
 function describePlayerReservation(playerReservation) {
   if (playerReservation.mode === 'adaptive') {
-    return 'adaptive (lazy slot creation)';
+    return 'adaptive (matches connected players, expands as needed)';
   }
 
   if (playerReservation.mode === 'auto') {
@@ -493,6 +516,7 @@ function parseArgs(rawArgs, defaults) {
   let usedButtonsOverride = defaults.usedButtonsOverride;
   let usedInputsOverride = defaults.usedInputsOverride;
   let usedHapticsOverride = defaults.usedHapticsOverride;
+  let usedMaxPlayersOverride = defaults.usedMaxPlayersOverride;
 
   let presetExplicitlySet = defaults.presetExplicitlySet;
   const positional = [];
@@ -624,17 +648,20 @@ function parseArgs(rawArgs, defaults) {
       }
 
       maxPlayersValue = next.trim();
+      usedMaxPlayersOverride = true;
       index += 1;
       continue;
     }
 
     if (arg.startsWith('--players=')) {
       maxPlayersValue = arg.slice('--players='.length).trim();
+      usedMaxPlayersOverride = true;
       continue;
     }
 
     if (arg.startsWith('--max-players=')) {
       maxPlayersValue = arg.slice('--max-players='.length).trim();
+      usedMaxPlayersOverride = true;
       continue;
     }
 
@@ -731,7 +758,8 @@ function parseArgs(rawArgs, defaults) {
     usedJoystickOverride,
     usedButtonsOverride,
     usedInputsOverride,
-    usedHapticsOverride
+    usedHapticsOverride,
+    usedMaxPlayersOverride
   };
 }
 
@@ -803,7 +831,7 @@ async function runPhonePadCommand(rawArgs) {
       process.env.PHONEPAD_MAX_PLAYERS,
       fileEnv.PAD_MAX_PLAYERS,
       fileEnv.PHONEPAD_MAX_PLAYERS,
-      'auto'
+      'adaptive'
     ),
     baseUrl: readSetting(process.env.PAD_URL, process.env.PHONEPAD_PUBLIC_URL, fileEnv.PHONEPAD_PUBLIC_URL),
     accessToken: readSetting(process.env.PAD_TOKEN, process.env.PHONEPAD_ACCESS_TOKEN, fileEnv.PHONEPAD_ACCESS_TOKEN),
@@ -812,6 +840,14 @@ async function runPhonePadCommand(rawArgs) {
     usedButtonsOverride: Boolean(readSetting(process.env.PHONEPAD_BUTTONS, fileEnv.PHONEPAD_BUTTONS)),
     usedInputsOverride: Boolean(readSetting(process.env.PHONEPAD_INPUTS, fileEnv.PHONEPAD_INPUTS)),
     usedHapticsOverride: Boolean(readSetting(process.env.PHONEPAD_HAPTICS, fileEnv.PHONEPAD_HAPTICS)),
+    usedMaxPlayersOverride: Boolean(
+      readSetting(
+        process.env.PAD_MAX_PLAYERS,
+        process.env.PHONEPAD_MAX_PLAYERS,
+        fileEnv.PAD_MAX_PLAYERS,
+        fileEnv.PHONEPAD_MAX_PLAYERS
+      )
+    ),
     presetExplicitlySet: Boolean(
       readSetting(process.env.PHONEPAD_PRESET, process.env.PHONEPAD_LAYOUT, fileEnv.PHONEPAD_PRESET, fileEnv.PHONEPAD_LAYOUT)
     )
@@ -854,7 +890,8 @@ async function runPhonePadCommand(rawArgs) {
   }
 
   const layoutConfig = resolveLayoutConfig(parsed);
-  const playerReservation = parsePlayerReservationWithAutoSlots(parsed.maxPlayersValue, autoReservedSlots);
+  const effectiveMaxPlayersValue = resolveMaxPlayersValueForPreset(parsed);
+  const playerReservation = parsePlayerReservationWithAutoSlots(effectiveMaxPlayersValue, autoReservedSlots);
   const adminAccessToken = parsed.accessToken;
   const controllerAccessToken = loadOrCreateControllerSessionToken();
 
@@ -950,6 +987,7 @@ export {
   parseArgs,
   parseAutoReservedSlots,
   parsePlayerReservation,
+  resolveMaxPlayersValueForPreset,
   publishControllerSessionToken,
   readBootMarker,
   resolveControllerSessionStatePath,

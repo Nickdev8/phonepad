@@ -31,8 +31,14 @@ const STICK_DEADZONE = 0.08;
 const STICK_RESPONSE_EXPONENT = 1.4;
 const STICK_SMOOTHING = 0.35;
 const STICK_AXIS_PRECISION = 1000;
+const ACTION_GRID_COLUMNS = 2;
+const MAX_PRIMARY_ACTIONS = 8;
 const DEFAULT_INPUTS = Object.freeze(['up', 'down', 'left', 'right', 'A', 'B']);
 const DIRECTION_KEYS = Object.freeze(['up', 'down', 'left', 'right']);
+const VOLUME_UP_EVENT_KEYS = Object.freeze(['AudioVolumeUp', 'VolumeUp']);
+const VOLUME_DOWN_EVENT_KEYS = Object.freeze(['AudioVolumeDown', 'VolumeDown']);
+const VOLUME_UP_EVENT_KEYCODES = Object.freeze([24, 175]);
+const VOLUME_DOWN_EVENT_KEYCODES = Object.freeze([25, 174]);
 const DEFAULT_CONTROLLER_CONFIG = Object.freeze({
   preset: 'classic',
   joystickMode: 'dpad',
@@ -50,6 +56,8 @@ const PRESET_ACTION_METADATA = Object.freeze({
     labels: Object.freeze({
       A: 'Jump',
       B: 'Back',
+      L1: 'Rotate Left',
+      R1: 'Rotate Right',
       X: 'Sprint',
       Y: 'Dance'
     }),
@@ -59,8 +67,7 @@ const PRESET_ACTION_METADATA = Object.freeze({
         label: 'Sprint Lock',
         description: 'Hold Sprint'
       })
-    ]),
-    actionsClassName: 'preset-ultimate-chicken-horse'
+    ])
   })
 });
 
@@ -77,6 +84,7 @@ const appleSwitchHapticsSupported = detectAppleSwitchHapticsSupport();
 let inputKeys = [...DEFAULT_INPUTS];
 let state = createState(inputKeys);
 let manualButtonState = createState(inputKeys);
+let hardwareButtonState = createState(inputKeys);
 let lockedButtonState = createState(inputKeys);
 let controllerConfig = {
   preset: DEFAULT_CONTROLLER_CONFIG.preset,
@@ -361,6 +369,7 @@ function setTabOwnershipState(isOwner) {
   syncLockButtonInteractivity();
 
   if (!isOwner) {
+    releaseHardwareButtonStates();
     closeControllerSocket();
     syncTopChrome();
     return;
@@ -523,6 +532,12 @@ function isDpadKey(key) {
   return DIRECTION_KEYS.includes(key.toLowerCase());
 }
 
+function getPrimaryActionKeys() {
+  const requestedButtons = sanitizeButtons(controllerConfig.buttons, inputKeys);
+  const defaultButtons = inputKeys.filter((key) => !isDpadKey(key));
+  return (requestedButtons.length > 0 ? requestedButtons : defaultButtons).slice(0, MAX_PRIMARY_ACTIONS);
+}
+
 function getControlLabel(key) {
   const normalized = key.toLowerCase();
   if (DPAD_LABELS[normalized]) {
@@ -643,13 +658,7 @@ function updateDeviceNote() {
 
   const notes = [];
   if (controllerConfig.haptics && !supportsNativeHaptics()) {
-    if (isAppleMobile) {
-      if (supportsSwitchHaptics()) {
-        notes.push('Safari does not expose web vibration here, so PhonePad uses Safari switch haptics on supported Apple devices.');
-      } else {
-        notes.push('Safari does not expose web vibration here, so haptics fall back to visual feedback.');
-      }
-    } else {
+    if (!isAppleMobile) {
       notes.push('This browser does not expose vibration, so haptics fall back to visual feedback.');
     }
   }
@@ -774,29 +783,53 @@ function syncViewportMetrics() {
     220,
     viewportHeight - 24 - (landscapeCompact ? 0 : topHeight)
   );
+  const actionRowCount = Math.max(1, Math.ceil(Math.max(1, getPrimaryActionKeys().length) / ACTION_GRID_COLUMNS));
+  const actionColumnGapTotal = gap * Math.max(0, ACTION_GRID_COLUMNS - 1);
+  const actionRowGapTotal = gap * Math.max(0, actionRowCount - 1);
 
   let dpadSize;
   let actionSize;
 
   if (landscape) {
-    dpadSize = Math.max(
-      140,
-      Math.min(
-        availableWidth * (landscapeCompact ? 0.36 : 0.34),
-        availableHeight * (landscapeCompact ? 0.88 : 0.72),
-        520
-      )
-    );
+    if (landscapeCompact) {
+      const splitWidth = Math.max(140, (availableWidth - gap) / 2);
+      dpadSize = Math.max(
+        140,
+        Math.min(
+          splitWidth,
+          availableHeight * 0.88,
+          520
+        )
+      );
 
-    const actionAreaWidth = Math.max(140, availableWidth - dpadSize - gap);
-    actionSize = Math.max(
-      64,
-      Math.min(
-        (actionAreaWidth - gap) / 2,
-        (availableHeight - gap) / 2,
-        landscapeCompact ? 220 : 280
-      )
-    );
+      actionSize = Math.max(
+        64,
+        Math.min(
+          (splitWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
+          (availableHeight - actionRowGapTotal) / actionRowCount,
+          220
+        )
+      );
+    } else {
+      dpadSize = Math.max(
+        140,
+        Math.min(
+          availableWidth * 0.34,
+          availableHeight * 0.72,
+          520
+        )
+      );
+
+      const actionAreaWidth = Math.max(140, availableWidth - dpadSize - gap);
+      actionSize = Math.max(
+        64,
+        Math.min(
+          (actionAreaWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
+          (availableHeight - actionRowGapTotal) / actionRowCount,
+          280
+        )
+      );
+    }
   } else {
     dpadSize = Math.max(
       180,
@@ -811,16 +844,18 @@ function syncViewportMetrics() {
     actionSize = Math.max(
       78,
       Math.min(
-        (availableWidth - gap) / 2,
-        (actionAreaHeight - gap) / 2,
+        (availableWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
+        (actionAreaHeight - actionRowGapTotal) / actionRowCount,
         280
       )
     );
   }
 
-  const actionsWidth = actionSize * 2 + gap;
+  const actionsWidth = actionSize * ACTION_GRID_COLUMNS + actionColumnGapTotal;
   const controllerMaxWidth = landscape
-    ? Math.min(availableWidth, dpadSize + actionsWidth + gap)
+    ? landscapeCompact
+      ? availableWidth
+      : Math.min(availableWidth, dpadSize + actionsWidth + gap)
     : Math.min(availableWidth, Math.max(dpadSize, actionsWidth));
 
   document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
@@ -835,6 +870,10 @@ function syncViewportMetrics() {
     '--controller-top-clearance',
     `${landscapeCompact ? Math.min(topHeight + 6, Math.max(0, viewportHeight * 0.22)) : 0}px`
   );
+
+  if (!landscape) {
+    releaseHardwareButtonStates();
+  }
 }
 
 function clearRetryTimers() {
@@ -1019,7 +1058,7 @@ function syncButtonVisuals(key) {
 }
 
 function applyEffectiveButtonState(key) {
-  const nextPressed = Boolean(manualButtonState[key] || lockedButtonState[key]);
+  const nextPressed = Boolean(manualButtonState[key] || hardwareButtonState[key] || lockedButtonState[key]);
   if (state[key] === nextPressed) {
     syncButtonVisuals(key);
     return false;
@@ -1031,18 +1070,41 @@ function applyEffectiveButtonState(key) {
   return true;
 }
 
-function setButtonState(key, pressed) {
-  if (!Object.hasOwn(manualButtonState, key)) {
-    manualButtonState[key] = false;
+function setSourceButtonState(sourceState, key, pressed) {
+  if (!Object.hasOwn(state, key)) {
+    return false;
   }
 
-  manualButtonState[key] = pressed;
+  sourceState[key] = pressed;
   return applyEffectiveButtonState(key);
 }
 
+function setButtonState(key, pressed) {
+  return setSourceButtonState(manualButtonState, key, pressed);
+}
+
+function setHardwareButtonState(key, pressed) {
+  return setSourceButtonState(hardwareButtonState, key, pressed);
+}
+
+function releaseHardwareButtonStates() {
+  let changed = false;
+
+  for (const key of Object.keys(hardwareButtonState)) {
+    if (!hardwareButtonState[key]) {
+      continue;
+    }
+
+    hardwareButtonState[key] = false;
+    changed = applyEffectiveButtonState(key) || changed;
+  }
+
+  return changed;
+}
+
 function toggleLockedButton(key) {
-  if (!Object.hasOwn(lockedButtonState, key)) {
-    lockedButtonState[key] = false;
+  if (!Object.hasOwn(state, key)) {
+    return;
   }
 
   lockedButtonState[key] = !lockedButtonState[key];
@@ -1153,6 +1215,46 @@ function bindButton(button, key) {
     }
   });
   button.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
+function matchesVolumeKey(event, keys, keyCodes) {
+  const key = String(event.key ?? '').trim();
+  const code = String(event.code ?? '').trim();
+  const legacyCode = Number.isInteger(event.keyCode) ? event.keyCode : event.which;
+
+  return keys.includes(key) || keys.includes(code) || keyCodes.includes(legacyCode);
+}
+
+function resolveLandscapeHardwareTrigger(event) {
+  if (!isLandscapeViewport()) {
+    return '';
+  }
+
+  if (matchesVolumeKey(event, VOLUME_UP_EVENT_KEYS, VOLUME_UP_EVENT_KEYCODES)) {
+    return 'L1';
+  }
+
+  if (matchesVolumeKey(event, VOLUME_DOWN_EVENT_KEYS, VOLUME_DOWN_EVENT_KEYCODES)) {
+    return 'R1';
+  }
+
+  return '';
+}
+
+function handleHardwareTriggerEvent(event, pressed) {
+  const key = resolveLandscapeHardwareTrigger(event);
+  if (!key || !Object.hasOwn(state, key)) {
+    return;
+  }
+
+  if (event.cancelable) {
+    event.preventDefault();
+  }
+  event.stopPropagation();
+
+  if (setHardwareButtonState(key, pressed) && pressed) {
+    triggerHaptic('light');
+  }
 }
 
 function createControlButton(key, dpadSlot = '') {
@@ -1447,14 +1549,7 @@ function renderControls() {
     smoothCleanup = smoothStick.cleanup;
   }
 
-  const requestedButtons = sanitizeButtons(controllerConfig.buttons, inputKeys);
-  const defaultButtons = inputKeys.filter((key) => !isDpadKey(key));
-  const primaryButtons = (requestedButtons.length > 0 ? requestedButtons : defaultButtons).slice(0, 8);
-  const presetActionMetadata = getPresetActionMetadata();
-  if (presetActionMetadata?.actionsClassName) {
-    actionsElement.classList.add(presetActionMetadata.actionsClassName);
-  }
-
+  const primaryButtons = getPrimaryActionKeys();
   const extras = [];
   const primarySet = new Set(primaryButtons);
 
@@ -1609,6 +1704,7 @@ async function initController() {
   inputKeys = config.inputs;
   state = createState(inputKeys);
   manualButtonState = createState(inputKeys);
+  hardwareButtonState = createState(inputKeys);
   lockedButtonState = createState(inputKeys);
   directionKeys = resolveDirectionKeys(inputKeys);
   controllerConfig = config.config;
@@ -1677,6 +1773,18 @@ window.addEventListener('online', () => {
   connectWebSocket();
 });
 
+window.addEventListener('keydown', (event) => {
+  handleHardwareTriggerEvent(event, true);
+});
+
+window.addEventListener('keyup', (event) => {
+  handleHardwareTriggerEvent(event, false);
+});
+
+window.addEventListener('blur', () => {
+  releaseHardwareButtonStates();
+});
+
 window.addEventListener('resize', () => {
   syncFullscreenButton();
   syncViewportMetrics();
@@ -1720,10 +1828,12 @@ window.addEventListener('visibilitychange', () => {
     return;
   }
 
+  releaseHardwareButtonStates();
   releaseControllerOwnership();
 });
 
 window.addEventListener('pagehide', () => {
+  releaseHardwareButtonStates();
   releaseControllerOwnership();
 });
 

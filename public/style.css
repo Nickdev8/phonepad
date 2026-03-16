@@ -423,6 +423,7 @@ body[data-feedback='strong']::after {
   font-size: clamp(1.02rem, 2.4vh, 1.45rem);
   font-weight: 900;
   line-height: 1;
+  text-align: center;
 }
 
 .action-btn[data-key='A'] {
@@ -614,35 +615,6 @@ body[data-feedback='strong']::after {
     grid-template-columns: minmax(0, var(--dpad-size)) minmax(0, var(--actions-width));
   }
 
-  .actions.preset-ultimate-chicken-horse {
-    grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr);
-    grid-template-areas:
-      'A B'
-      'X Y';
-    width: min(100%, max(var(--actions-width), calc(var(--action-size) * 2.05 + var(--control-gap))));
-    align-self: stretch;
-  }
-
-  .actions.preset-ultimate-chicken-horse .action-btn {
-    width: 100%;
-  }
-
-  .actions.preset-ultimate-chicken-horse .action-btn[data-key='A'] {
-    grid-area: A;
-  }
-
-  .actions.preset-ultimate-chicken-horse .action-btn[data-key='X'] {
-    grid-area: X;
-  }
-
-  .actions.preset-ultimate-chicken-horse .action-btn[data-key='B'] {
-    grid-area: B;
-  }
-
-  .actions.preset-ultimate-chicken-horse .action-btn[data-key='Y'] {
-    grid-area: Y;
-  }
-
   .app.landscape-compact .top {
     position: absolute;
     top: max(0.55rem, env(safe-area-inset-top));
@@ -657,6 +629,11 @@ body[data-feedback='strong']::after {
   .app.landscape-compact .top-status,
   .app.landscape-compact .top-actions {
     pointer-events: auto;
+  }
+
+  .app.landscape-compact .controller {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: 100%;
   }
 
   .app.landscape-compact .device-note {

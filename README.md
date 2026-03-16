@@ -41,6 +41,7 @@ Useful commands:
 ```bash
 phonepad --list-layouts
 phonepad shooter
+phonepad driving
 phonepad driving --players 8
 npm run observe
 ```

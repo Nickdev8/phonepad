@@ -77,7 +77,7 @@ active_button_layout: Tuple[str, ...] = ()
 active_button_map: Dict[str, int] = {}
 active_dropped_buttons: Tuple[str, ...] = ()
 DEBUG_ENABLED = False
-reservation_mode = "auto"
+reservation_mode = "adaptive"
 fixed_reserved_slots = None
 minimum_reserved_slots = 0
 last_debug_state_by_player: Dict[str, str] = {}
@@ -442,9 +442,9 @@ def parse_reservation_config():
     ).strip()
     if not raw_value:
         return {
-            "mode": "auto",
+            "mode": "adaptive",
             "fixed_slots": None,
-            "minimum_slots": parse_auto_reserved_slots(),
+            "minimum_slots": 0,
         }
 
     normalized = raw_value.lower()
@@ -467,14 +467,14 @@ def parse_reservation_config():
     except ValueError:
         print(
             "invalid PAD_MAX_PLAYERS value "
-            f"`{raw_value}`, defaulting to auto mode",
+            f"`{raw_value}`, defaulting to adaptive mode",
             file=sys.stderr,
             flush=True,
         )
         return {
-            "mode": "auto",
+            "mode": "adaptive",
             "fixed_slots": None,
-            "minimum_slots": parse_auto_reserved_slots(),
+            "minimum_slots": 0,
         }
 
     return {
