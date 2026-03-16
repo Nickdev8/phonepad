@@ -61,6 +61,12 @@ const PRESET_ACTION_METADATA = Object.freeze({
       X: 'Sprint',
       Y: 'Dance'
     }),
+    scales: Object.freeze({
+      X: 0.82,
+      Y: 0.82,
+      L1: 0.68,
+      R1: 0.68
+    }),
     toggles: Object.freeze([
       Object.freeze({
         key: 'X',
@@ -564,6 +570,28 @@ function getActionLabel(key) {
   return metadata.labels[key] ?? '';
 }
 
+function getActionScale(key) {
+  const metadata = getPresetActionMetadata();
+  const scale = metadata?.scales?.[key];
+  return typeof scale === 'number' && Number.isFinite(scale) && scale > 0 && scale <= 1 ? scale : 1;
+}
+
+function getPrimaryActionRowUnits() {
+  const primaryButtons = getPrimaryActionKeys();
+  if (primaryButtons.length === 0) {
+    return 1;
+  }
+
+  let units = 0;
+  for (let index = 0; index < primaryButtons.length; index += ACTION_GRID_COLUMNS) {
+    const rowButtons = primaryButtons.slice(index, index + ACTION_GRID_COLUMNS);
+    const rowScale = rowButtons.reduce((largest, key) => Math.max(largest, getActionScale(key)), 0);
+    units += Math.max(0.5, rowScale);
+  }
+
+  return Math.max(1, units);
+}
+
 function setStatus(text, type) {
   if (!statusElement) {
     return;
@@ -784,6 +812,7 @@ function syncViewportMetrics() {
     viewportHeight - 24 - (landscapeCompact ? 0 : topHeight)
   );
   const actionRowCount = Math.max(1, Math.ceil(Math.max(1, getPrimaryActionKeys().length) / ACTION_GRID_COLUMNS));
+  const actionRowUnits = getPrimaryActionRowUnits();
   const actionColumnGapTotal = gap * Math.max(0, ACTION_GRID_COLUMNS - 1);
   const actionRowGapTotal = gap * Math.max(0, actionRowCount - 1);
 
@@ -806,7 +835,7 @@ function syncViewportMetrics() {
         64,
         Math.min(
           (splitWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
-          (availableHeight - actionRowGapTotal) / actionRowCount,
+          (availableHeight - actionRowGapTotal) / actionRowUnits,
           220
         )
       );
@@ -825,7 +854,7 @@ function syncViewportMetrics() {
         64,
         Math.min(
           (actionAreaWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
-          (availableHeight - actionRowGapTotal) / actionRowCount,
+          (availableHeight - actionRowGapTotal) / actionRowUnits,
           280
         )
       );
@@ -845,7 +874,7 @@ function syncViewportMetrics() {
       78,
       Math.min(
         (availableWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
-        (actionAreaHeight - actionRowGapTotal) / actionRowCount,
+        (actionAreaHeight - actionRowGapTotal) / actionRowUnits,
         280
       )
     );
@@ -1269,6 +1298,12 @@ function createControlButton(key, dpadSlot = '') {
     button.textContent = getControlLabel(key);
   } else {
     button.classList.add('action-btn');
+    const actionScale = getActionScale(key);
+    button.style.setProperty('--action-scale', String(actionScale));
+    if (actionScale < 1) {
+      button.classList.add(actionScale <= 0.72 ? 'action-btn-mini' : 'action-btn-compact');
+    }
+
     const actionLabel = getActionLabel(key);
     if (actionLabel) {
       button.classList.add('action-btn-labeled');
