@@ -53,6 +53,7 @@ const DPAD_LABELS = Object.freeze({
 });
 const PRESET_ACTION_METADATA = Object.freeze({
   'ultimate-chicken-horse': Object.freeze({
+    actionsClassName: 'actions-ultimate-chicken-horse',
     labels: Object.freeze({
       A: 'Jump',
       B: 'Back',
@@ -67,6 +68,8 @@ const PRESET_ACTION_METADATA = Object.freeze({
       L1: 0.68,
       R1: 0.68
     }),
+    landscapeGridColumns: 3,
+    landscapeButtonOrder: Object.freeze(['A', 'X', 'L1', 'B', 'Y', 'R1']),
     toggles: Object.freeze([
       Object.freeze({
         key: 'X',
@@ -544,6 +547,51 @@ function getPrimaryActionKeys() {
   return (requestedButtons.length > 0 ? requestedButtons : defaultButtons).slice(0, MAX_PRIMARY_ACTIONS);
 }
 
+function getActionGridColumnCount(landscape = isLandscapeViewport()) {
+  const metadata = getPresetActionMetadata();
+  const landscapeColumns = metadata?.landscapeGridColumns;
+  if (landscape && Number.isInteger(landscapeColumns) && landscapeColumns > 0) {
+    return landscapeColumns;
+  }
+
+  return ACTION_GRID_COLUMNS;
+}
+
+function getPrimaryActionLayoutKeys(landscape = isLandscapeViewport()) {
+  const primaryButtons = getPrimaryActionKeys();
+  if (!landscape) {
+    return primaryButtons;
+  }
+
+  const metadata = getPresetActionMetadata();
+  const preferredOrder = Array.isArray(metadata?.landscapeButtonOrder) ? metadata.landscapeButtonOrder : [];
+  if (preferredOrder.length === 0) {
+    return primaryButtons;
+  }
+
+  const ordered = [];
+  const seen = new Set();
+
+  for (const key of preferredOrder) {
+    if (!primaryButtons.includes(key) || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    ordered.push(key);
+  }
+
+  for (const key of primaryButtons) {
+    if (seen.has(key)) {
+      continue;
+    }
+
+    ordered.push(key);
+  }
+
+  return ordered;
+}
+
 function getControlLabel(key) {
   const normalized = key.toLowerCase();
   if (DPAD_LABELS[normalized]) {
@@ -576,15 +624,16 @@ function getActionScale(key) {
   return typeof scale === 'number' && Number.isFinite(scale) && scale > 0 && scale <= 1 ? scale : 1;
 }
 
-function getPrimaryActionRowUnits() {
-  const primaryButtons = getPrimaryActionKeys();
+function getPrimaryActionRowUnits(landscape = isLandscapeViewport()) {
+  const primaryButtons = getPrimaryActionLayoutKeys(landscape);
   if (primaryButtons.length === 0) {
     return 1;
   }
 
+  const actionColumnCount = getActionGridColumnCount(landscape);
   let units = 0;
-  for (let index = 0; index < primaryButtons.length; index += ACTION_GRID_COLUMNS) {
-    const rowButtons = primaryButtons.slice(index, index + ACTION_GRID_COLUMNS);
+  for (let index = 0; index < primaryButtons.length; index += actionColumnCount) {
+    const rowButtons = primaryButtons.slice(index, index + actionColumnCount);
     const rowScale = rowButtons.reduce((largest, key) => Math.max(largest, getActionScale(key)), 0);
     units += Math.max(0.5, rowScale);
   }
@@ -811,9 +860,11 @@ function syncViewportMetrics() {
     220,
     viewportHeight - 24 - (landscapeCompact ? 0 : topHeight)
   );
-  const actionRowCount = Math.max(1, Math.ceil(Math.max(1, getPrimaryActionKeys().length) / ACTION_GRID_COLUMNS));
-  const actionRowUnits = getPrimaryActionRowUnits();
-  const actionColumnGapTotal = gap * Math.max(0, ACTION_GRID_COLUMNS - 1);
+  const actionColumnCount = getActionGridColumnCount(landscape);
+  const actionLayoutKeys = getPrimaryActionLayoutKeys(landscape);
+  const actionRowCount = Math.max(1, Math.ceil(Math.max(1, actionLayoutKeys.length) / actionColumnCount));
+  const actionRowUnits = getPrimaryActionRowUnits(landscape);
+  const actionColumnGapTotal = gap * Math.max(0, actionColumnCount - 1);
   const actionRowGapTotal = gap * Math.max(0, actionRowCount - 1);
 
   let dpadSize;
@@ -834,7 +885,7 @@ function syncViewportMetrics() {
       actionSize = Math.max(
         64,
         Math.min(
-          (splitWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
+          (splitWidth - actionColumnGapTotal) / actionColumnCount,
           (availableHeight - actionRowGapTotal) / actionRowUnits,
           220
         )
@@ -853,7 +904,7 @@ function syncViewportMetrics() {
       actionSize = Math.max(
         64,
         Math.min(
-          (actionAreaWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
+          (actionAreaWidth - actionColumnGapTotal) / actionColumnCount,
           (availableHeight - actionRowGapTotal) / actionRowUnits,
           280
         )
@@ -873,14 +924,14 @@ function syncViewportMetrics() {
     actionSize = Math.max(
       78,
       Math.min(
-        (availableWidth - actionColumnGapTotal) / ACTION_GRID_COLUMNS,
+        (availableWidth - actionColumnGapTotal) / actionColumnCount,
         (actionAreaHeight - actionRowGapTotal) / actionRowUnits,
         280
       )
     );
   }
 
-  const actionsWidth = actionSize * ACTION_GRID_COLUMNS + actionColumnGapTotal;
+  const actionsWidth = actionSize * actionColumnCount + actionColumnGapTotal;
   const controllerMaxWidth = landscape
     ? landscapeCompact
       ? availableWidth
@@ -1557,6 +1608,10 @@ function renderControls() {
   clearSmoothStick();
   dpadElement.classList.remove('smooth-host');
   actionsElement.className = 'actions';
+  const presetActionMetadata = getPresetActionMetadata();
+  if (presetActionMetadata?.actionsClassName) {
+    actionsElement.classList.add(presetActionMetadata.actionsClassName);
+  }
   actionButtonsByKey = new Map();
   lockButtonsByKey = new Map();
 

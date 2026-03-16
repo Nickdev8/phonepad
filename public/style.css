@@ -639,6 +639,37 @@ body[data-feedback='strong']::after {
     grid-template-columns: minmax(0, var(--dpad-size)) minmax(0, var(--actions-width));
   }
 
+  .actions.actions-ultimate-chicken-horse {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas:
+      'A X L1'
+      'B Y R1';
+  }
+
+  .actions.actions-ultimate-chicken-horse .action-btn[data-key='A'] {
+    grid-area: A;
+  }
+
+  .actions.actions-ultimate-chicken-horse .action-btn[data-key='B'] {
+    grid-area: B;
+  }
+
+  .actions.actions-ultimate-chicken-horse .action-btn[data-key='X'] {
+    grid-area: X;
+  }
+
+  .actions.actions-ultimate-chicken-horse .action-btn[data-key='Y'] {
+    grid-area: Y;
+  }
+
+  .actions.actions-ultimate-chicken-horse .action-btn[data-key='L1'] {
+    grid-area: L1;
+  }
+
+  .actions.actions-ultimate-chicken-horse .action-btn[data-key='R1'] {
+    grid-area: R1;
+  }
+
   .app.landscape-compact .top {
     position: absolute;
     top: max(0.55rem, env(safe-area-inset-top));
